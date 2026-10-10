@@ -14,10 +14,21 @@
 <script>
 Auth.init();
 const session = Layout.initGuru('audit-log');
-if (session) renderAuditLog();
 
 let filterCategory = 'semua';
 let filterSeverity = 'semua';
+
+try {
+  if (session) renderAuditLog();
+} catch (err) {
+  console.error('Error rendering Audit Log:', err);
+  Layout.setContent(`
+    <div class="alert alert-danger" style="margin:24px">
+      <span class="alert-icon">❌</span>
+      <div><strong>Gagal memuat Audit Log:</strong> ${Utils.escapeHtml(err.message)}</div>
+    </div>
+  `);
+}
 
 function renderAuditLog() {
   Layout.setPageTitle('Audit Log');

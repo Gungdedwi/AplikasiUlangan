@@ -15,14 +15,24 @@
 <script>
 Auth.init();
 const session = Layout.initGuru('dashboard');
-if (session) renderDashboard();
+try {
+  if (session) renderDashboard();
+} catch (err) {
+  console.error('Error rendering Dashboard:', err);
+  Layout.setContent(`
+    <div class="alert alert-danger" style="margin:24px">
+      <span class="alert-icon">❌</span>
+      <div><strong>Gagal memuat Dashboard:</strong> ${Utils.escapeHtml(err.message)}</div>
+    </div>
+  `);
+}
 
 function renderDashboard() {
   Layout.setPageTitle('Dashboard');
   
-  const ujianList = DB.getUjian().filter(u => u.guruId === session.userId);
+  const ujianList = DB.getUjian().filter(u => Boolean(u) && (!u.guruId || u.guruId === session.userId || session.role === 'guru'));
   const hasilList = DB.getHasil();
-  const soalList = DB.getSoal().filter(s => s.pembuatId === session.userId);
+  const soalList = DB.getSoal().filter(s => Boolean(s) && (!s.pembuatId || s.pembuatId === session.userId || session.role === 'guru'));
   const logs = DB.getLogs();
   const siswaCount = DB.getUsers().filter(u => u.role === 'siswa').length;
   

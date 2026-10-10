@@ -14,7 +14,17 @@
 <script>
 Auth.init();
 const session = Layout.initGuru('pengaturan');
-if (session) renderPengaturan();
+try {
+  if (session) renderPengaturan();
+} catch (err) {
+  console.error('Error rendering Pengaturan:', err);
+  Layout.setContent(`
+    <div class="alert alert-danger" style="margin:24px">
+      <span class="alert-icon">❌</span>
+      <div><strong>Gagal memuat Pengaturan:</strong> ${Utils.escapeHtml(err.message)}</div>
+    </div>
+  `);
+}
 
 function renderPengaturan() {
   Layout.setPageTitle('Pengaturan');

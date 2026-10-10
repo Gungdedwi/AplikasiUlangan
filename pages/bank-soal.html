@@ -14,12 +14,23 @@
 <script>
 Auth.init();
 const session = Layout.initGuru('bank-soal');
-if (session) renderBankSoal();
 
 let filterTipe = 'semua';
 let filterMapel = 'semua';
 let searchQuery = '';
 let editingSoalId = null;
+
+try {
+  if (session) renderBankSoal();
+} catch (err) {
+  console.error('Error rendering Bank Soal:', err);
+  Layout.setContent(`
+    <div class="alert alert-danger" style="margin:24px">
+      <span class="alert-icon">❌</span>
+      <div><strong>Gagal memuat Bank Soal:</strong> ${Utils.escapeHtml(err.message)}</div>
+    </div>
+  `);
+}
 
 function renderBankSoal() {
   Layout.setPageTitle('Bank Soal');
@@ -78,7 +89,7 @@ function renderBankSoal() {
 }
 
 function renderSoalList() {
-  let list = DB.getSoal().filter(s => s.pembuatId === session.userId);
+  let list = DB.getSoal().filter(s => Boolean(s) && (!s.pembuatId || s.pembuatId === session.userId || session.role === 'guru'));
   if (filterTipe !== 'semua') list = list.filter(s => s.tipe === filterTipe);
   if (filterMapel !== 'semua') list = list.filter(s => s.mapel === filterMapel);
   if (searchQuery.trim()) {

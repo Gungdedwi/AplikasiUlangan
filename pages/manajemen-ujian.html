@@ -14,13 +14,23 @@
 <script>
 Auth.init();
 const session = Layout.initGuru('manajemen-ujian');
-if (session) renderManajemenUjian();
-
 let editingUjianId = null;
+
+try {
+  if (session) renderManajemenUjian();
+} catch (err) {
+  console.error('Error rendering Manajemen Ujian:', err);
+  Layout.setContent(`
+    <div class="alert alert-danger" style="margin:24px">
+      <span class="alert-icon">❌</span>
+      <div><strong>Gagal memuat Manajemen Ujian:</strong> ${Utils.escapeHtml(err.message)}</div>
+    </div>
+  `);
+}
 
 function renderManajemenUjian() {
   Layout.setPageTitle('Manajemen Ujian');
-  const ujianList = DB.getUjian().filter(u => u.guruId === session.userId);
+  const ujianList = DB.getUjian().filter(u => Boolean(u) && (!u.guruId || u.guruId === session.userId || session.role === 'guru'));
 
   const content = `
   <div class="animate-fade-in">
@@ -66,7 +76,7 @@ function renderManajemenUjian() {
 }
 
 function renderUjianList() {
-  const ujianList = DB.getUjian().filter(u => u.guruId === session.userId).sort((a,b) => b.createdAt - a.createdAt);
+  const ujianList = DB.getUjian().filter(u => Boolean(u) && (!u.guruId || u.guruId === session.userId || session.role === 'guru')).sort((a,b) => b.createdAt - a.createdAt);
   const container = document.getElementById('ujian-list-container');
   if (!container) return;
 

@@ -14,13 +14,23 @@
 <script>
 Auth.init();
 const session = Layout.initGuru('hasil');
-if (session) renderHasil();
-
 let selectedUjianId = new URLSearchParams(window.location.search).get('ujianId') || 'semua';
+
+try {
+  if (session) renderHasil();
+} catch (err) {
+  console.error('Error rendering Hasil:', err);
+  Layout.setContent(`
+    <div class="alert alert-danger" style="margin:24px">
+      <span class="alert-icon">❌</span>
+      <div><strong>Gagal memuat Hasil & Nilai:</strong> ${Utils.escapeHtml(err.message)}</div>
+    </div>
+  `);
+}
 
 function renderHasil() {
   Layout.setPageTitle('Hasil & Nilai');
-  const ujianList = DB.getUjian().filter(u => u.guruId === session.userId);
+  const ujianList = DB.getUjian().filter(u => Boolean(u) && (!u.guruId || u.guruId === session.userId || session.role === 'guru'));
 
   const content = `
   <div class="animate-fade-in">
@@ -89,7 +99,7 @@ function renderHasilTable() {
   let hasilList = DB.getHasil();
   
   // Filter by guru
-  const guruUjianIds = DB.getUjian().filter(u => u.guruId === session.userId).map(u => u.id);
+  const guruUjianIds = DB.getUjian().filter(u => Boolean(u) && (!u.guruId || u.guruId === session.userId || session.role === 'guru')).map(u => u.id);
   hasilList = hasilList.filter(h => guruUjianIds.includes(h.ujianId));
   
   if (ujianId !== 'semua') hasilList = hasilList.filter(h => h.ujianId === ujianId);
