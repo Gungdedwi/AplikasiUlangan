@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="description" content="Aplikasi Ulangan Digital - Sistem asesmen online modern untuk guru dan siswa Indonesia"/>
+  <meta http-equiv="X-Content-Type-Options" content="nosniff"/>
+  <meta http-equiv="X-Frame-Options" content="DENY"/>
+  <title>Login - Aplikasi Ulangan Digital</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <style>
+    .login-form-section { display: none; }
+    .login-form-section.active { display: block; animation: fadeInUp 0.3s ease; }
+  </style>
+</head>
+<body>
+<div id="toast-container"></div>
+
+<div class="login-page">
+  <div class="login-bg-circles">
+    <span></span><span></span><span></span>
+  </div>
+
+  <div class="login-card animate-fade-in-up">
+    <div class="login-header">
+      <div class="login-logo">📝</div>
+      <h1 class="login-title">Ulangan Digital</h1>
+      <p class="login-subtitle">Sistem Asesmen Online Sekolah</p>
+    </div>
+
+    <div class="login-body">
+      <!-- Tab Guru / Siswa -->
+      <div class="login-tabs">
+        <button class="login-tab active" id="tab-guru" onclick="switchTab('guru')">👨‍🏫 Guru</button>
+        <button class="login-tab" id="tab-siswa" onclick="switchTab('siswa')">🎓 Siswa</button>
+      </div>
+
+      <!-- Alert Error -->
+      <div id="login-error" class="alert alert-danger" style="display:none">
+        <span class="alert-icon">❌</span>
+        <span id="login-error-msg">Login gagal</span>
+      </div>
+
+      <!-- Form Guru -->
+      <div class="login-form-section active" id="form-guru">
+        <form onsubmit="doLogin(event,'guru')" novalidate>
+          <div class="form-group">
+            <label class="form-label">Username Guru <span class="required">*</span></label>
+            <div class="input-wrapper">
+              <span class="input-icon">👤</span>
+              <input type="text" id="guru-username" class="form-control" placeholder="Masukkan username" autocomplete="username" maxlength="50"/>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Password <span class="required">*</span></label>
+            <div class="input-wrapper">
+              <span class="input-icon">🔒</span>
+              <input type="password" id="guru-password" class="form-control" placeholder="Masukkan password" autocomplete="current-password" maxlength="100"/>
+              <button type="button" class="input-action" onclick="togglePassword('guru-password')">👁️</button>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary btn-full btn-lg" id="btn-guru-login">
+            <span id="btn-guru-text">Masuk sebagai Guru</span>
+            <span id="btn-guru-loading" class="spinner spinner-sm" style="display:none"></span>
+          </button>
+          <p class="text-center text-sm text-muted mt-4">
+            Demo: <strong>guru1</strong> / <strong>guru123</strong>
+          </p>
+        </form>
+      </div>
+
+      <!-- Form Siswa -->
+      <div class="login-form-section" id="form-siswa">
+        <form onsubmit="doLogin(event,'siswa')" novalidate>
+          <div class="form-group">
+            <label class="form-label">Username Siswa <span class="required">*</span></label>
+            <div class="input-wrapper">
+              <span class="input-icon">🎓</span>
+              <input type="text" id="siswa-username" class="form-control" placeholder="Masukkan username" autocomplete="username" maxlength="50"/>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">PIN / Password <span class="required">*</span></label>
+            <div class="input-wrapper">
+              <span class="input-icon">🔑</span>
+              <input type="password" id="siswa-password" class="form-control" placeholder="Masukkan PIN/password" autocomplete="current-password" maxlength="100"/>
+              <button type="button" class="input-action" onclick="togglePassword('siswa-password')">👁️</button>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary btn-full btn-lg" id="btn-siswa-login">
+            <span id="btn-siswa-text">Masuk sebagai Siswa</span>
+            <span id="btn-siswa-loading" class="spinner spinner-sm" style="display:none"></span>
+          </button>
+          <p class="text-center text-sm text-muted mt-4">
+            Demo: <strong>siswa1</strong> / <strong>12345</strong>
+          </p>
+        </form>
+      </div>
+
+      <div class="divider"></div>
+      <p class="text-center text-xs text-muted">
+        🔒 Sistem dilindungi enkripsi & aman digunakan<br/>
+        <strong>SMA Negeri Contoh</strong> • TA 2025/2026
+      </p>
+    </div>
+  </div>
+</div>
+
+<script src="js/storage.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  // Init
+  Auth.init();
+  DB.seed();
+
+  // Redirect jika sudah login
+  const session = Auth.getSession();
+  if (session) {
+    window.location.href = session.role === 'guru' ? 'pages/dashboard-guru.html' : 'pages/dashboard-siswa.html';
+  }
+
+  let currentTab = 'guru';
+
+  function switchTab(tab) {
+    currentTab = tab;
+    document.getElementById('tab-guru').classList.toggle('active', tab === 'guru');
+    document.getElementById('tab-siswa').classList.toggle('active', tab === 'siswa');
+    document.getElementById('form-guru').classList.toggle('active', tab === 'guru');
+    document.getElementById('form-siswa').classList.toggle('active', tab === 'siswa');
+    hideError();
+  }
+
+  function hideError() {
+    document.getElementById('login-error').style.display = 'none';
+  }
+
+  function showError(msg) {
+    document.getElementById('login-error').style.display = 'flex';
+    document.getElementById('login-error-msg').textContent = msg;
+  }
+
+  function togglePassword(id) {
+    const el = document.getElementById(id);
+    el.type = el.type === 'password' ? 'text' : 'password';
+  }
+
+  function setLoading(role, loading) {
+    document.getElementById(`btn-${role}-text`).style.display = loading ? 'none' : 'inline';
+    document.getElementById(`btn-${role}-loading`).style.display = loading ? 'inline-block' : 'none';
+    document.getElementById(`btn-${role}-login`).disabled = loading;
+  }
+
+  async function doLogin(e, role) {
+    e.preventDefault();
+    hideError();
+    Utils.clearFieldErrors();
+
+    const username = document.getElementById(`${role}-username`).value;
+    const password = document.getElementById(`${role}-password`).value;
+
+    if (!username.trim()) { showError('Username harus diisi'); return; }
+    if (!password.trim()) { showError('Password harus diisi'); return; }
+
+    setLoading(role, true);
+
+    // Simulasi async (untuk UX)
+    await new Promise(r => setTimeout(r, 600));
+
+    const result = Auth.login(username, password, role);
+    setLoading(role, false);
+
+    if (!result.success) {
+      showError(result.error);
+      document.getElementById(`${role}-password`).value = '';
+      return;
+    }
+
+    Utils.toast(`Selamat datang, ${result.user.name}!`, 'success');
+    setTimeout(() => {
+      window.location.href = role === 'guru' ? 'pages/dashboard-guru.html' : 'pages/dashboard-siswa.html';
+    }, 500);
+  }
+</script>
+</body>
+</html>

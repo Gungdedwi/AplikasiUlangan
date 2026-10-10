@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Instruksi Ujian - Ulangan Digital</title>
+  <link rel="stylesheet" href="../css/style.css"/>
+</head>
+<body>
+<div id="toast-container"></div>
+<script src="../js/storage.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/auth.js"></script>
+<script>
+Auth.init();
+const session = Auth.requireRole('siswa', '../index.html');
+if (!session) throw new Error('Unauthorized');
+
+const ujianId = new URLSearchParams(window.location.search).get('ujianId');
+if (!ujianId) { window.location.href = 'dashboard-siswa.html'; throw new Error('No ujianId'); }
+
+const ujian = DB.getUjianById(ujianId);
+if (!ujian) { alert('Ujian tidak ditemukan'); window.location.href = 'dashboard-siswa.html'; throw new Error('Ujian not found'); }
+
+// Cek apakah sudah selesai
+const existingHasil = DB.getHasilBySiswaUjian(session.userId, ujianId);
+if (existingHasil && existingHasil.status === 'selesai') {
+  window.location.href = `selesai.html?hasilId=${existingHasil.id}`;
+}
+
+let countdownInterval;
+
+document.body.innerHTML = `
+<div class="instruction-page">
+  <div class="instruction-card animate-fade-in-up">
+    <div class="instruction-header">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;opacity:0.7;margin-bottom:4px">Instruksi Ujian</div>
+      <h1>${Utils.escapeHtml(ujian.judul)}</h1>
+      <p>👨‍🏫 ${Utils.escapeHtml(ujian.guru||'Guru')} • 📚 ${Utils.escapeHtml(ujian.mapel||'-')}</p>
+    </div>
+
+    <!-- Exam Meta -->
+    <div class="exam-meta-grid">
+      <div class="exam-meta-item">
+        <div class="exam-meta-label">Durasi</div>
+        <div class="exam-meta-value">⏱️ ${ujian.durasi} menit</div>
+      </div>
+      <div class="exam-meta-item">
+        <div class="exam-meta-label">Jumlah Soal</div>
+        <div class="exam-meta-value">📝 ${ujian.soalIds?.length||0} soal</div>
+      </div>
+      <div class="exam-meta-item">
+        <div class="exam-meta-label">KKM</div>
+        <div class="exam-meta-value">🎯 ${ujian.kkm||75}</div>
+      </div>
+    </div>
+
+    <div class="instruction-body">
+      <!-- Identitas Siswa -->
+      <div class="identity-confirm mb-4">
+        <p>Anda masuk sebagai:</p>
+        <strong>👤 ${Utils.escapeHtml(session.name)} — ${Utils.escapeHtml(session.kelas||'Siswa')}</strong>
+      </div>
+
+      <!-- Instruksi dari Guru -->
+      ${ujian.instruksi ? `
+      <div class="alert alert-info mb-4">
+        <span class="alert-icon">📢</span>
+        <div><strong>Pesan dari Guru:</strong><br/>${Utils.escapeHtml(ujian.instruksi)}</div>
+      </div>` : ''}
+
+      <!-- Ketentuan Umum -->
+      <h3 class="section-title mb-3">📋 Ketentuan Ujian</h3>
+      <div class="instruction-list mb-4">
+        ${[
+          'Ujian bersifat <strong>individual</strong>. Dilarang bekerjasama dengan siapapun.',
+          'Saat Anda menekan <strong>Mulai Ujian</strong>, browser akan masuk ke mode <strong>Fullscreen (Layar Penuh)</strong>.',
+          'Dilarang berpindah tab, meminimize, atau keluar dari jendela browser selama ujian berlangsung.',
+          'Setiap pelanggaran (keluar fullscreen, pindah tab, dll) akan <strong>dicatat dan dilaporkan</strong> ke guru.',
+          `Setelah <strong>${ujian.maxPelanggaran||3} pelanggaran</strong>, ujian Anda akan <strong>otomatis ditangguhkan</strong> dan memerlukan verifikasi guru.`,
+          'Jawaban disimpan otomatis setiap beberapa detik. Jika koneksi terganggu, jawaban tetap tersimpan.',
+          `Waktu ujian adalah <strong>${ujian.durasi} menit</strong>. Ujian akan otomatis terkirim saat waktu habis.`,
+          'Periksa kembali seluruh jawaban sebelum menekan tombol <strong>Kirim Ujian</strong>.',
+          'Dilarang membuka DevTools, melakukan screenshot, atau tindakan kecurangan lainnya.',
+        ].map((text, i) => `
+        <div class="instruction-item">
+          <div class="instruction-item-num">${i+1}</div>
+          <div class="instruction-item-text">${text}</div>
+        </div>`).join('')}
+      </div>
+
+      <!-- Konfirmasi -->
+      <div style="background:var(--warning-light);border:1.5px solid var(--warning);border-radius:var(--radius);padding:16px;margin-bottom:20px">
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+          <input type="checkbox" id="confirm-rules" style="margin-top:3px;width:18px;height:18px;cursor:pointer" onchange="toggleStartBtn()"/>
+          <span style="font-size:14px;font-weight:600;color:var(--gray-700)">Saya telah membaca dan memahami seluruh ketentuan ujian di atas dan siap memulai ujian dengan jujur.</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="instruction-footer">
+      <div style="display:flex;gap:10px;flex-direction:column">
+        <button id="btn-mulai" onclick="mulaiUjian()" class="btn btn-primary btn-full btn-xl" disabled>
+          🚀 Mulai Ujian (Masuk Fullscreen)
+        </button>
+        <a href="dashboard-siswa.html" class="btn btn-secondary btn-full">← Kembali</a>
+      </div>
+    </div>
+  </div>
+</div>`;
+
+function toggleStartBtn() {
+  const checked = document.getElementById('confirm-rules').checked;
+  document.getElementById('btn-mulai').disabled = !checked;
+}
+
+async function mulaiUjian() {
+  document.getElementById('btn-mulai').disabled = true;
+  document.getElementById('btn-mulai').textContent = '⏳ Mempersiapkan ujian...';
+  
+  try {
+    // Minta fullscreen
+    await Utils.requestFullscreen();
+  } catch(e) {
+    // Fullscreen gagal (mungkin di beberapa browser mobile)
+    console.warn('Fullscreen request failed:', e);
+  }
+  
+  // Simpan ujianId di sessionStorage untuk dipakai halaman ujian
+  sessionStorage.setItem('activeUjianId', ujianId);
+  
+  // Log
+  DB.addLog({
+    type: 'MASUK_INSTRUKSI',
+    category: 'exam',
+    ujianId: ujianId,
+    actor: session.name,
+    actorId: session.userId,
+    detail: `Membaca instruksi ujian: ${ujian.judul}`,
+    icon: '📋',
+    severity: 'info',
+  });
+  
+  window.location.href = `ujian.html?ujianId=${ujianId}`;
+}
+</script>
+</body>
+</html>

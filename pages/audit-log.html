@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Audit Log - Ulangan Digital</title>
+  <link rel="stylesheet" href="../css/style.css"/>
+</head>
+<body>
+<script src="../js/storage.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/layout.js"></script>
+<script>
+Auth.init();
+const session = Layout.initGuru('audit-log');
+if (session) renderAuditLog();
+
+let filterCategory = 'semua';
+let filterSeverity = 'semua';
+
+function renderAuditLog() {
+  Layout.setPageTitle('Audit Log');
+  const content = `
+  <div class="animate-fade-in">
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="page-title">Audit Log</h1>
+        <p class="page-subtitle">Rekam jejak seluruh aktivitas sistem</p>
+      </div>
+      <button onclick="clearLogs()" class="btn btn-danger btn-sm">🗑️ Hapus Log</button>
+    </div>
+
+    <!-- Filter -->
+    <div class="card mb-4">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        <div>
+          <label class="form-label">Kategori</label>
+          <select class="form-control" style="width:auto" onchange="filterCategory=this.value;renderLogList()">
+            <option value="semua">Semua</option>
+            <option value="auth">🔐 Autentikasi</option>
+            <option value="exam">📋 Ujian</option>
+            <option value="violation">⚠️ Pelanggaran</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Tingkat</label>
+          <select class="form-control" style="width:auto" onchange="filterSeverity=this.value;renderLogList()">
+            <option value="semua">Semua</option>
+            <option value="info">ℹ️ Info</option>
+            <option value="warning">⚠️ Warning</option>
+            <option value="danger">🚨 Danger</option>
+            <option value="success">✅ Success</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats Singkat -->
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px" id="log-mini-stats"></div>
+
+    <!-- Log List -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">📋 Daftar Log</h3>
+        <span id="log-count" class="badge badge-gray"></span>
+      </div>
+      <div id="log-list-container" style="max-height:600px;overflow-y:auto"></div>
+    </div>
+  </div>`;
+
+  Layout.setContent(content);
+  renderLogStats();
+  renderLogList();
+}
+
+function renderLogStats() {
+  const logs = DB.getLogs();
+  const today = new Date(); today.setHours(0,0,0,0);
+  const todayLogs = logs.filter(l => l.timestamp >= today.getTime());
+  const violationLogs = logs.filter(l => l.category === 'violation');
+  const suspendedLogs = logs.filter(l => l.type === 'DITANGGUHKAN');
+  
+  const container = document.getElementById('log-mini-stats');
+  if (!container) return;
+  
+  container.innerHTML = [
+    {icon:'📋', label:'Total Log', val:logs.length, color:'var(--primary)'},
+    {icon:'📅', label:'Hari Ini', val:todayLogs.length, color:'var(--secondary)'},
+    {icon:'⚠️', label:'Pelanggaran', val:violationLogs.length, color:'var(--warning)'},
+    {icon:'🚫', label:'Ditangguhkan', val:suspendedLogs.length, color:'var(--danger)'},
+  ].map(s => `
+  <div style="background:white;border:1px solid var(--gray-200);border-radius:var(--radius);padding:12px 20px;display:flex;align-items:center;gap:10px">
+    <span style="font-size:20px">${s.icon}</span>
+    <div>
+      <div style="font-size:20px;font-weight:800;color:${s.color}">${s.val}</div>
+      <div style="font-size:11px;color:var(--gray-500);font-weight:600">${s.label}</div>
+    </div>
+  </div>`).join('');
+}
+
+function renderLogList() {
+  let logs = DB.getLogs();
+  if (filterCategory !== 'semua') logs = logs.filter(l => l.category === filterCategory);
+  if (filterSeverity !== 'semua') logs = logs.filter(l => l.severity === filterSeverity);
+  
+  const countEl = document.getElementById('log-count');
+  if (countEl) countEl.textContent = `${logs.length} log`;
+  
+  const container = document.getElementById('log-list-container');
+  if (!container) return;
+
+  if (logs.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">📭</div>
+        <div class="empty-state-title">Tidak ada log</div>
+      </div>`;
+    return;
+  }
+
+  const severityColors = {
+    info: 'info',
+    warning: 'warning',
+    danger: 'danger',
+    success: 'success',
+  };
+
+  container.innerHTML = `
+    <div class="audit-timeline" style="padding:16px 16px 16px 32px">
+      ${logs.map(log => {
+        const badgeColor = log.category === 'violation' ? 'badge-warning' : 
+          log.severity === 'danger' ? 'badge-danger' :
+          log.severity === 'success' ? 'badge-success' : 'badge-gray';
+        return `
+        <div class="audit-item">
+          <div class="audit-dot ${severityColors[log.severity] || 'info'}">${log.icon || '📌'}</div>
+          <div class="audit-content">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <div class="audit-action">${Utils.escapeHtml(log.type?.replace(/_/g,' ') || '-')}</div>
+              <span class="badge ${badgeColor}">${log.category || '-'}</span>
+              ${log.violationNum ? `<span class="badge badge-danger">Pelanggaran ke-${log.violationNum}</span>` : ''}
+            </div>
+            <div class="audit-detail">
+              ${log.actor ? `<strong>${Utils.escapeHtml(log.actor)}</strong> — ` : ''}
+              ${Utils.escapeHtml(log.detail || '')}
+            </div>
+            <div class="audit-time">${Utils.formatDateTime(log.timestamp)} • ${Utils.timeAgo(log.timestamp)}</div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function clearLogs() {
+  Utils.confirm('Hapus Semua Log', 'Yakin ingin menghapus semua audit log? Tindakan ini tidak dapat dibatalkan.', () => {
+    DB.set('audit_logs', []);
+    Utils.toast('Audit log berhasil dihapus', 'success');
+    renderLogStats();
+    renderLogList();
+  });
+}
+</script>
+</body>
+</html>

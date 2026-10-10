@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Hasil & Nilai - Ulangan Digital</title>
+  <link rel="stylesheet" href="../css/style.css"/>
+</head>
+<body>
+<script src="../js/storage.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/layout.js"></script>
+<script>
+Auth.init();
+const session = Layout.initGuru('hasil');
+if (session) renderHasil();
+
+let selectedUjianId = new URLSearchParams(window.location.search).get('ujianId') || 'semua';
+
+function renderHasil() {
+  Layout.setPageTitle('Hasil & Nilai');
+  const ujianList = DB.getUjian().filter(u => u.guruId === session.userId);
+
+  const content = `
+  <div class="animate-fade-in">
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="page-title">Hasil & Nilai</h1>
+        <p class="page-subtitle">Rekap nilai dan performa siswa</p>
+      </div>
+      <button onclick="exportData()" class="btn btn-outline">📥 Export CSV</button>
+    </div>
+
+    <!-- Filter -->
+    <div class="card mb-6">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        <div>
+          <label class="form-label">Filter Ujian</label>
+          <select class="form-control" id="filter-ujian" onchange="selectedUjianId=this.value;renderHasilTable()" style="width:auto;min-width:250px">
+            <option value="semua">Semua Ujian</option>
+            ${ujianList.map(u => `<option value="${u.id}" ${selectedUjianId===u.id?'selected':''}>${Utils.escapeHtml(u.judul)}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Filter Status</label>
+          <select class="form-control" id="filter-status" onchange="renderHasilTable()" style="width:auto">
+            <option value="semua">Semua Status</option>
+            <option value="selesai">Selesai</option>
+            <option value="berlangsung">Berlangsung</option>
+            <option value="ditangguhkan">Ditangguhkan</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div id="hasil-stats" class="stats-grid mb-6"></div>
+
+    <!-- Table -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">📊 Rekap Nilai Siswa</h3>
+        <div id="hasil-count" class="badge badge-gray"></div>
+      </div>
+      <div id="hasil-table-container"></div>
+    </div>
+
+    <!-- Detail Modal -->
+    <div id="modal-detail" class="modal-backdrop" style="display:none">
+      <div class="modal modal-lg">
+        <div class="modal-header">
+          <h3 class="modal-title">Detail Hasil Ujian</h3>
+          <button class="modal-close" onclick="closeDetail()">✕</button>
+        </div>
+        <div class="modal-body" id="modal-detail-body"></div>
+      </div>
+    </div>
+  </div>`;
+  
+  Layout.setContent(content);
+  renderHasilTable();
+}
+
+function renderHasilTable() {
+  const ujianId = document.getElementById('filter-ujian')?.value || selectedUjianId;
+  const statusFilter = document.getElementById('filter-status')?.value || 'semua';
+  
+  let hasilList = DB.getHasil();
+  
+  // Filter by guru
+  const guruUjianIds = DB.getUjian().filter(u => u.guruId === session.userId).map(u => u.id);
+  hasilList = hasilList.filter(h => guruUjianIds.includes(h.ujianId));
+  
+  if (ujianId !== 'semua') hasilList = hasilList.filter(h => h.ujianId === ujianId);
+  if (statusFilter !== 'semua') hasilList = hasilList.filter(h => h.status === statusFilter);
+  hasilList = hasilList.sort((a,b) => b.submittedAt - a.submittedAt);
+
+  // Stats
+  const selesai = hasilList.filter(h => h.status === 'selesai');
+  const avgNilai = selesai.length ? (selesai.reduce((a,b) => a+(b.nilai||0), 0) / selesai.length).toFixed(1) : 0;
+  const lulus = selesai.filter(h => h.lulus).length;
+  const pelanggaran = hasilList.reduce((a,b) => a+(b.violationCount||0), 0);
+  const statsEl = document.getElementById('hasil-stats');
+  if (statsEl) {
+    statsEl.innerHTML = `
+      <div class="stat-card"><div class="stat-icon blue">📋</div><div><div class="stat-value">${hasilList.length}</div><div class="stat-label">Total Peserta</div></div></div>
+      <div class="stat-card"><div class="stat-icon green">✅</div><div><div class="stat-value">${selesai.length}</div><div class="stat-label">Selesai</div></div></div>
+      <div class="stat-card"><div class="stat-icon orange">📊</div><div><div class="stat-value">${avgNilai}</div><div class="stat-label">Rata-rata Nilai</div></div></div>
+      <div class="stat-card"><div class="stat-icon purple">🏆</div><div><div class="stat-value">${lulus}</div><div class="stat-label">Lulus KKM</div></div></div>
+      <div class="stat-card"><div class="stat-icon red">⚠️</div><div><div class="stat-value">${pelanggaran}</div><div class="stat-label">Total Pelanggaran</div></div></div>`;
+  }
+
+  const countEl = document.getElementById('hasil-count');
+  if (countEl) countEl.textContent = `${hasilList.length} data`;
+
+  const container = document.getElementById('hasil-table-container');
+  if (!container) return;
+
+  if (hasilList.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">📭</div>
+        <div class="empty-state-title">Belum ada hasil</div>
+        <div class="empty-state-text">Hasil ujian siswa akan muncul di sini</div>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="table-wrapper">
+      <table>
+        <thead><tr>
+          <th>Siswa</th><th>Ujian</th><th>Nilai</th><th>Status</th><th>Dijawab</th><th>Pelanggaran</th><th>Waktu</th><th>Aksi</th>
+        </tr></thead>
+        <tbody>
+          ${hasilList.map(h => {
+            const statusBadge = h.status === 'selesai' ? '<span class="badge badge-success">✅ Selesai</span>' :
+              h.status === 'berlangsung' ? '<span class="badge badge-info">⏳ Berlangsung</span>' :
+              '<span class="badge badge-danger">🚫 Ditangguhkan</span>';
+            return `
+            <tr>
+              <td>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <div style="width:32px;height:32px;border-radius:50%;background:var(--primary-pale);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">${Utils.getInitials(h.siswaName)}</div>
+                  <strong>${Utils.escapeHtml(h.siswaName)}</strong>
+                </div>
+              </td>
+              <td><div style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px">${Utils.escapeHtml(h.ujianJudul)}</div></td>
+              <td>
+                ${h.nilai !== null ? `
+                  <div style="font-size:20px;font-weight:800;color:${h.lulus ? 'var(--success)' : 'var(--danger)'}">${Utils.formatScore(h.nilai)}</div>
+                  ${h.lulus ? '<div class="badge badge-success" style="margin-top:2px">Lulus</div>' : '<div class="badge badge-danger" style="margin-top:2px">Tidak Lulus</div>'}
+                ` : '<span class="text-muted">-</span>'}
+              </td>
+              <td>${statusBadge}</td>
+              <td>
+                ${h.scoring ? `${h.scoring.dijawab}/${h.scoring.totalSoal}` : '-'}
+              </td>
+              <td>
+                ${h.violationCount > 0 ? `<span class="badge badge-warning" style="cursor:pointer" onclick="showViolations('${h.id}')">⚠️ ${h.violationCount}x</span>` : '<span class="badge badge-gray">—</span>'}
+              </td>
+              <td style="font-size:13px;color:var(--gray-500)">${Utils.formatDuration(h.waktuPengerjaan)}</td>
+              <td>
+                <div class="td-actions">
+                  <button onclick="showDetail('${h.id}')" class="btn btn-sm btn-outline">🔍 Detail</button>
+                  ${h.scoring?.detail && Object.values(h.scoring.detail).some(d => d.status === 'manual') ?
+                    `<button onclick="nilaiManual('${h.id}')" class="btn btn-sm btn-warning">📝 Nilai</button>` : ''}
+                </div>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function showDetail(hasilId) {
+  const hasil = DB.getHasil().find(h => h.id === hasilId);
+  if (!hasil) return;
+  const ujian = DB.getUjianById(hasil.ujianId);
+  const violations = DB.getLogsByHasil(hasilId).filter(l => l.category === 'violation');
+  
+  let soalDetail = '';
+  if (hasil.scoring?.detail && hasil.answers) {
+    const ujianData = ujian;
+    if (ujianData) {
+      const soalList = (ujianData.soalIds || []).map(id => DB.getSoalById(id)).filter(Boolean);
+      soalDetail = soalList.map((s, i) => {
+        const d = hasil.scoring.detail[s.id];
+        const userAnswer = hasil.answers[s.id];
+        const isBenar = d?.benar;
+        const isManual = d?.status === 'manual';
+        return `
+        <div style="padding:10px;border-radius:var(--radius);border:1px solid ${isManual?'var(--gray-200)':isBenar?'var(--success-light)':'var(--danger-light)'};background:${isManual?'var(--gray-50)':isBenar?'#F0FDF4':'#FFF1F2'};margin-bottom:8px">
+          <div style="font-size:12px;font-weight:700;color:var(--gray-400);margin-bottom:4px">Soal ${i+1} • ${isManual ? '📝 Manual' : isBenar ? '✅ Benar' : '❌ Salah'} • Bobot: ${d?.bobot||1}</div>
+          <div style="font-size:13px;color:var(--gray-700);margin-bottom:6px">${Utils.escapeHtml(s.pertanyaan)}</div>
+          <div style="font-size:12px">
+            <span style="color:var(--gray-500)">Jawaban: </span><strong>${Utils.escapeHtml(String(userAnswer||'-'))}</strong>
+            ${!isManual ? ` | <span style="color:var(--gray-500)">Kunci: </span><strong style="color:var(--success)">${Utils.escapeHtml(String(s.jawaban||'-'))}</strong>` : ''}
+          </div>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  document.getElementById('modal-detail-body').innerHTML = `
+    <div class="result-hero" style="margin-bottom:20px">
+      <div class="result-score-ring">
+        <div class="result-score">${hasil.nilai !== null ? Utils.formatScore(hasil.nilai) : '-'}</div>
+        <div class="result-score-label">Nilai</div>
+      </div>
+      <div class="result-name">${Utils.escapeHtml(hasil.siswaName)}</div>
+      <div class="result-exam">${Utils.escapeHtml(hasil.ujianJudul)}</div>
+      ${hasil.lulus !== undefined ? `<div style="margin-top:12px"><span class="badge" style="background:${hasil.lulus?'rgba(255,255,255,0.2)':'rgba(239,68,68,0.3)'};color:white;font-size:14px;padding:6px 16px">${hasil.lulus ? '✅ LULUS' : '❌ TIDAK LULUS'}</span></div>` : ''}
+    </div>
+    <div class="result-details-grid mb-4">
+      <div class="result-detail-item"><div class="result-detail-value">${hasil.scoring?.dijawab||0}/${hasil.scoring?.totalSoal||0}</div><div class="result-detail-label">Soal Dijawab</div></div>
+      <div class="result-detail-item"><div class="result-detail-value">${Utils.formatDuration(hasil.waktuPengerjaan)}</div><div class="result-detail-label">Waktu Pengerjaan</div></div>
+      <div class="result-detail-item"><div class="result-detail-value" style="color:var(--danger)">${hasil.violationCount||0}x</div><div class="result-detail-label">Pelanggaran</div></div>
+      <div class="result-detail-item"><div class="result-detail-value">${Utils.formatDateTime(hasil.submittedAt)}</div><div class="result-detail-label">Dikumpulkan</div></div>
+    </div>
+    
+    ${violations.length > 0 ? `
+    <div class="mb-4">
+      <h4 class="section-title mb-2">⚠️ Log Pelanggaran</h4>
+      ${violations.map(v => `
+      <div class="alert alert-warning" style="margin-bottom:8px">
+        <span class="alert-icon">⚠️</span>
+        <div><strong>${Utils.escapeHtml(v.type?.replace(/_/g,' '))}</strong> — ${Utils.escapeHtml(v.detail)}<br/><small>${Utils.formatDateTime(v.timestamp)}</small></div>
+      </div>`).join('')}
+    </div>` : ''}
+    
+    ${soalDetail ? `
+    <div>
+      <h4 class="section-title mb-2">📝 Detail Jawaban</h4>
+      ${soalDetail}
+    </div>` : ''}`;
+  
+  document.getElementById('modal-detail').style.display = 'flex';
+}
+
+function closeDetail() { document.getElementById('modal-detail').style.display = 'none'; }
+
+function exportData() {
+  const ujianId = document.getElementById('filter-ujian')?.value || 'semua';
+  let hasilList = DB.getHasil();
+  const guruUjianIds = DB.getUjian().filter(u => u.guruId === session.userId).map(u => u.id);
+  hasilList = hasilList.filter(h => guruUjianIds.includes(h.ujianId));
+  if (ujianId !== 'semua') hasilList = hasilList.filter(h => h.ujianId === ujianId);
+  
+  const data = hasilList.map(h => ({
+    Nama: h.siswaName,
+    Ujian: h.ujianJudul,
+    Nilai: h.nilai,
+    Status: h.status,
+    Lulus: h.lulus ? 'Ya' : 'Tidak',
+    Dijawab: h.scoring?.dijawab,
+    TotalSoal: h.scoring?.totalSoal,
+    Pelanggaran: h.violationCount || 0,
+    WaktuPengerjaan: Utils.formatDuration(h.waktuPengerjaan),
+    Dikumpulkan: Utils.formatDateTime(h.submittedAt),
+  }));
+  
+  Utils.exportCSV(data, `hasil-ujian-${Date.now()}`);
+  Utils.toast('Data berhasil diexport', 'success');
+}
+
+document.addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-detail')) closeDetail();
+});
+</script>
+</body>
+</html>

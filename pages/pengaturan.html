@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Pengaturan - Ulangan Digital</title>
+  <link rel="stylesheet" href="../css/style.css"/>
+</head>
+<body>
+<script src="../js/storage.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/layout.js"></script>
+<script>
+Auth.init();
+const session = Layout.initGuru('pengaturan');
+if (session) renderPengaturan();
+
+function renderPengaturan() {
+  Layout.setPageTitle('Pengaturan');
+  const settings = DB.getSettings();
+  const content = `
+  <div class="animate-fade-in">
+    <div class="mb-6">
+      <h1 class="page-title">Pengaturan</h1>
+      <p class="page-subtitle">Konfigurasi sistem dan Exam Mode</p>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+      <!-- Exam Mode Settings -->
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">🛡️ Pengaturan Exam Mode</h3></div>
+        <div class="settings-section">
+          <div class="settings-section-title">Keamanan Ujian</div>
+          
+          <div class="settings-item">
+            <div class="settings-item-info">
+              <div class="label">Wajib Fullscreen</div>
+              <div class="hint">Siswa harus dalam mode fullscreen saat ujian</div>
+            </div>
+            <div class="settings-item-control">
+              <div class="toggle-track ${settings.requireFullscreen?'on':''}" id="t-fullscreen" onclick="toggleSetting(this,'requireFullscreen')"><div class="toggle-thumb" style="left:${settings.requireFullscreen?'22':'2'}px"></div></div>
+            </div>
+          </div>
+
+          <div class="settings-item">
+            <div class="settings-item-info">
+              <div class="label">Maks. Pelanggaran (Default)</div>
+              <div class="hint">Jumlah pelanggaran sebelum ujian ditangguhkan</div>
+            </div>
+            <div class="settings-item-control">
+              <input type="number" id="s-max-violations" class="form-control" value="${settings.maxViolations||3}" min="1" max="20" style="width:70px;text-align:center" onchange="saveSetting('maxViolations',parseInt(this.value))"/>
+            </div>
+          </div>
+
+          <div class="settings-item">
+            <div class="settings-item-info">
+              <div class="label">Interval Autosave (detik)</div>
+              <div class="hint">Seberapa sering jawaban disimpan otomatis</div>
+            </div>
+            <div class="settings-item-control">
+              <input type="number" id="s-autosave" class="form-control" value="${settings.autosaveInterval||30}" min="10" max="300" style="width:80px;text-align:center" onchange="saveSetting('autosaveInterval',parseInt(this.value))"/>
+            </div>
+          </div>
+
+          <div class="settings-item">
+            <div class="settings-item-info">
+              <div class="label">Izinkan Tandai Soal</div>
+              <div class="hint">Siswa dapat menandai soal untuk ditinjau ulang</div>
+            </div>
+            <div class="settings-item-control">
+              <div class="toggle-track ${settings.allowFlagQuestion?'on':''}" id="t-flag" onclick="toggleSetting(this,'allowFlagQuestion')"><div class="toggle-thumb" style="left:${settings.allowFlagQuestion?'22':'2'}px"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Hasil Ujian</div>
+          
+          <div class="settings-item">
+            <div class="settings-item-info">
+              <div class="label">Izinkan Review Soal</div>
+              <div class="hint">Siswa bisa kembali ke soal sebelumnya</div>
+            </div>
+            <div class="settings-item-control">
+              <div class="toggle-track ${settings.allowReview?'on':''}" id="t-review" onclick="toggleSetting(this,'allowReview')"><div class="toggle-thumb" style="left:${settings.allowReview?'22':'2'}px"></div></div>
+            </div>
+          </div>
+
+          <div class="settings-item">
+            <div class="settings-item-info">
+              <div class="label">Tampilkan Nilai Langsung</div>
+              <div class="hint">Siswa dapat melihat nilai setelah submit (default global)</div>
+            </div>
+            <div class="settings-item-control">
+              <div class="toggle-track ${settings.showScoreImmediately?'on':''}" id="t-score" onclick="toggleSetting(this,'showScoreImmediately')"><div class="toggle-thumb" style="left:${settings.showScoreImmediately?'22':'2'}px"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Manajemen Pengguna -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">👥 Manajemen Pengguna</h3>
+          <button onclick="openAddUserModal()" class="btn btn-sm btn-primary">➕ Tambah</button>
+        </div>
+        <div id="user-list-container"></div>
+      </div>
+    </div>
+
+    <!-- Informasi Sistem -->
+    <div class="card mt-6">
+      <div class="card-header"><h3 class="card-title">ℹ️ Informasi Sistem</h3></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px">
+        ${buildSysInfo()}
+      </div>
+      <div class="divider"></div>
+      <div class="alert alert-warning">
+        <span class="alert-icon">⚠️</span>
+        <div><strong>Catatan Keamanan Exam Mode:</strong> Web browser biasa tidak dapat menjamin penguncian perangkat 100%. Untuk keamanan tingkat perangkat, gunakan kiosk browser atau managed-device mode (misalnya: Chrome Kiosk Mode, Safe Exam Browser).</div>
+      </div>
+      <div class="alert alert-info mt-4">
+        <span class="alert-icon">🔒</span>
+        <div><strong>Proteksi yang Diimplementasikan:</strong> Page Visibility API, Fullscreen Detection, Window Blur/Focus, Keyboard Shortcut Blocking (F12, DevTools, Print), Context Menu Disabled, Copy/Paste Disabled, Browser Back Button Detection, Autosave setiap ${settings.autosaveInterval||30} detik.</div>
+      </div>
+      <div class="mt-4" style="display:flex;gap:10px;flex-wrap:wrap">
+        <button onclick="resetData()" class="btn btn-danger btn-sm">⚠️ Reset Semua Data</button>
+        <button onclick="exportAllData()" class="btn btn-outline btn-sm">📦 Backup Data</button>
+      </div>
+    </div>
+
+    <!-- Modal Tambah User -->
+    <div id="modal-add-user" class="modal-backdrop" style="display:none">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 class="modal-title">Tambah Pengguna</h3>
+          <button class="modal-close" onclick="closeUserModal()">✕</button>
+        </div>
+        <div class="modal-body" id="add-user-body"></div>
+      </div>
+    </div>
+  </div>`;
+
+  Layout.setContent(content);
+  renderUserList();
+}
+
+function buildSysInfo() {
+  const users = DB.getUsers();
+  const soal = DB.getSoal();
+  const ujian = DB.getUjian();
+  const hasil = DB.getHasil();
+  const logs = DB.getLogs();
+  const totalStorageKB = Math.round(JSON.stringify(DB.all()).length / 1024);
+  
+  return [
+    {icon:'👥', label:'Total Pengguna', val:users.length},
+    {icon:'📚', label:'Total Soal', val:soal.length},
+    {icon:'📋', label:'Total Ujian', val:ujian.length},
+    {icon:'📊', label:'Total Hasil', val:hasil.length},
+    {icon:'📋', label:'Total Log', val:logs.length},
+    {icon:'💾', label:'Storage Terpakai', val:`~${totalStorageKB} KB`},
+  ].map(s => `
+  <div style="background:var(--gray-50);border-radius:var(--radius);padding:14px;text-align:center">
+    <div style="font-size:24px;margin-bottom:4px">${s.icon}</div>
+    <div style="font-size:20px;font-weight:700;color:var(--primary)">${s.val}</div>
+    <div style="font-size:11px;color:var(--gray-500)">${s.label}</div>
+  </div>`).join('');
+}
+
+function renderUserList() {
+  const users = DB.getUsers();
+  const container = document.getElementById('user-list-container');
+  if (!container) return;
+  
+  if (users.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">👥</div><div class="empty-state-title">Belum ada pengguna</div></div>';
+    return;
+  }
+  
+  container.innerHTML = `
+  <div style="max-height:400px;overflow-y:auto">
+    ${users.map(u => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--gray-100)">
+      <div style="width:32px;height:32px;border-radius:50%;background:${u.role==='guru'?'var(--primary-pale)':'var(--success-light)'};color:${u.role==='guru'?'var(--primary)':'var(--success)'};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">${Utils.getInitials(u.name)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:var(--gray-800)">${Utils.escapeHtml(u.name)}</div>
+        <div style="font-size:11px;color:var(--gray-400)">${u.username} • ${u.role === 'guru' ? '👨‍🏫 Guru' : '🎓 '+Utils.escapeHtml(u.kelas||'Siswa')}</div>
+      </div>
+      <button onclick="deleteUser('${u.id}')" class="btn btn-icon btn-sm" style="background:var(--danger-light);color:var(--danger)" title="Hapus">🗑️</button>
+    </div>`).join('')}
+  </div>`;
+}
+
+function openAddUserModal() {
+  document.getElementById('add-user-body').innerHTML = `
+    <form onsubmit="saveUser(event)" novalidate>
+      <div class="form-group">
+        <label class="form-label">Peran <span class="required">*</span></label>
+        <select id="nu-role" class="form-control" onchange="toggleKelasField()">
+          <option value="siswa">🎓 Siswa</option>
+          <option value="guru">👨‍🏫 Guru</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nama Lengkap <span class="required">*</span></label>
+        <input type="text" id="nu-name" class="form-control" placeholder="Masukkan nama lengkap" maxlength="100"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Username <span class="required">*</span></label>
+        <input type="text" id="nu-username" class="form-control" placeholder="Username unik" maxlength="50"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password / PIN <span class="required">*</span></label>
+        <input type="text" id="nu-password" class="form-control" placeholder="Minimal 4 karakter" maxlength="100"/>
+      </div>
+      <div class="form-group" id="kelas-field">
+        <label class="form-label">Kelas</label>
+        <input type="text" id="nu-kelas" class="form-control" placeholder="e.g. XI IPA 1" maxlength="50"/>
+      </div>
+      <div class="modal-footer" style="padding:0;border:none;margin-top:16px">
+        <button type="button" onclick="closeUserModal()" class="btn btn-secondary">Batal</button>
+        <button type="submit" class="btn btn-primary">Simpan</button>
+      </div>
+    </form>`;
+  document.getElementById('modal-add-user').style.display = 'flex';
+}
+
+function closeUserModal() { document.getElementById('modal-add-user').style.display = 'none'; }
+
+function toggleKelasField() {
+  const role = document.getElementById('nu-role').value;
+  const field = document.getElementById('kelas-field');
+  if (field) field.style.display = role === 'siswa' ? 'block' : 'none';
+}
+
+function saveUser(e) {
+  e.preventDefault();
+  const name = Utils.sanitizeInput(document.getElementById('nu-name').value);
+  const username = Utils.sanitizeInput(document.getElementById('nu-username').value);
+  const password = document.getElementById('nu-password').value;
+  const role = document.getElementById('nu-role').value;
+  const kelas = role === 'siswa' ? Utils.sanitizeInput(document.getElementById('nu-kelas').value) : '';
+  
+  if (!name || !username || !password) { Utils.toast('Semua field wajib diisi', 'error'); return; }
+  if (password.length < 4) { Utils.toast('Password minimal 4 karakter', 'error'); return; }
+  
+  const existing = DB.getUsers().find(u => u.username === username);
+  if (existing) { Utils.toast('Username sudah digunakan', 'error'); return; }
+  
+  DB.addUser({ name, username, password, role, kelas, active: true });
+  Utils.toast(`Pengguna ${name} berhasil ditambahkan`, 'success');
+  closeUserModal();
+  renderUserList();
+}
+
+function deleteUser(id) {
+  Utils.confirm('Hapus Pengguna', 'Yakin ingin menghapus pengguna ini?', () => {
+    DB.deleteUser(id);
+    Utils.toast('Pengguna berhasil dihapus', 'success');
+    renderUserList();
+  });
+}
+
+function toggleSetting(el, key) {
+  el.classList.toggle('on');
+  const isOn = el.classList.contains('on');
+  el.querySelector('.toggle-thumb').style.left = isOn ? '22px' : '2px';
+  saveSetting(key, isOn);
+}
+
+function saveSetting(key, value) {
+  const settings = DB.getSettings();
+  settings[key] = value;
+  DB.saveSettings(settings);
+  Utils.toast('Pengaturan tersimpan', 'success');
+}
+
+function resetData() {
+  Utils.confirm('Reset Semua Data', 'PERINGATAN: Tindakan ini akan menghapus SEMUA data termasuk ujian, soal, hasil, dan pengguna. Tidak dapat dibatalkan!', () => {
+    Object.keys(localStorage).filter(k => k.startsWith('ulangan_')).forEach(k => localStorage.removeItem(k));
+    Utils.toast('Semua data berhasil direset', 'success');
+    setTimeout(() => window.location.href = '../index.html', 1000);
+  });
+}
+
+function exportAllData() {
+  const data = DB.all();
+  const json = JSON.stringify(data, null, 2);
+  const a = document.createElement('a');
+  a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(json);
+  a.download = `backup-ulangan-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  Utils.toast('Backup berhasil didownload', 'success');
+}
+
+document.addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-add-user')) closeUserModal();
+});
+</script>
+</body>
+</html>

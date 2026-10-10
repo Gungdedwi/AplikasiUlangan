@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Ujian Selesai - Ulangan Digital</title>
+  <link rel="stylesheet" href="../css/style.css"/>
+</head>
+<body>
+<div id="toast-container"></div>
+<script src="../js/storage.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/auth.js"></script>
+<script>
+Auth.init();
+const session = Auth.requireRole('siswa', '../index.html');
+if (!session) throw new Error('Unauthorized');
+
+const hasilId = new URLSearchParams(window.location.search).get('hasilId');
+if (!hasilId) { window.location.href = 'dashboard-siswa.html'; throw new Error('No hasilId'); }
+
+const hasil = DB.getHasil().find(h => h.id === hasilId);
+if (!hasil) { window.location.href = 'dashboard-siswa.html'; throw new Error('Hasil not found'); }
+
+const ujian = DB.getUjianById(hasil.ujianId);
+const isDitangguhkan = hasil.status === 'ditangguhkan';
+const showScore = ujian?.tampilkanHasil || DB.getSettings().showScoreImmediately;
+
+// Exit fullscreen jika masih aktif
+Utils.exitFullscreen().catch(() => {});
+
+// Build tampilan berdasarkan status
+const nilaiColor = hasil.nilai >= 90 ? 'var(--success)' : hasil.nilai >= 75 ? 'var(--primary)' : 'var(--danger)';
+const nilaiLabel = hasil.nilai >= 90 ? '🏆 Luar Biasa!' : hasil.nilai >= 75 ? '✅ Bagus!' : '💪 Terus Semangat!';
+
+document.body.innerHTML = isDitangguhkan ? buildSuspendedPage() : buildSelesaiPage();
+
+function buildSelesaiPage() {
+  return `
+  <div class="selesai-page">
+    <div class="selesai-card animate-fade-in-up">
+      <div class="selesai-header">
+        <div class="checkmark-animation">✅</div>
+        <h1 style="font-family:var(--font-heading);font-size:24px;font-weight:800;margin-bottom:6px">Ujian Selesai!</h1>
+        <p style="opacity:0.85;font-size:14px">Jawaban Anda telah berhasil dikumpulkan</p>
+      </div>
+
+      <div style="padding:28px">
+        <!-- Identitas -->
+        <div style="background:var(--gray-50);border-radius:var(--radius);padding:16px;margin-bottom:20px;text-align:center">
+          <div style="font-size:13px;color:var(--gray-500)">Peserta</div>
+          <div style="font-family:var(--font-heading);font-size:18px;font-weight:700;color:var(--gray-900);margin-top:2px">${Utils.escapeHtml(hasil.siswaName)}</div>
+          <div style="font-size:13px;color:var(--gray-500);margin-top:2px">${Utils.escapeHtml(hasil.ujianJudul)}</div>
+        </div>
+
+        <!-- Nilai (jika ditampilkan) -->
+        ${showScore && hasil.nilai !== null ? `
+        <div style="text-align:center;background:linear-gradient(135deg,${hasil.lulus?'#ECFDF5,#D1FAE5':'#FEF2F2,#FEE2E2'});border-radius:var(--radius-lg);padding:28px;margin-bottom:20px">
+          <div style="font-family:var(--font-heading);font-size:64px;font-weight:800;color:${nilaiColor};line-height:1">${Utils.formatScore(hasil.nilai)}</div>
+          <div style="font-size:16px;font-weight:600;color:${nilaiColor};margin-top:4px">${nilaiLabel}</div>
+          <div style="margin-top:12px">
+            <span class="badge" style="background:${hasil.lulus?'var(--success)':'var(--danger)'};color:white;font-size:14px;padding:6px 20px">
+              ${hasil.lulus ? '🏆 LULUS' : '❌ TIDAK LULUS'}
+            </span>
+          </div>
+          <div style="font-size:13px;color:var(--gray-500);margin-top:8px">KKM: ${ujian?.kkm||75}</div>
+        </div>
+
+        <!-- Detail Stats -->
+        <div class="result-details-grid mb-4">
+          <div class="result-detail-item">
+            <div class="result-detail-value">${hasil.scoring?.dijawab||0}/${hasil.scoring?.totalSoal||0}</div>
+            <div class="result-detail-label">Soal Dijawab</div>
+          </div>
+          <div class="result-detail-item">
+            <div class="result-detail-value">${Utils.formatDuration(hasil.waktuPengerjaan)}</div>
+            <div class="result-detail-label">Waktu</div>
+          </div>
+          ${hasil.violationCount > 0 ? `
+          <div class="result-detail-item">
+            <div class="result-detail-value" style="color:var(--danger)">${hasil.violationCount}x</div>
+            <div class="result-detail-label">Pelanggaran</div>
+          </div>` : ''}
+        </div>
+        ` : `
+        <div class="alert alert-info">
+          <span class="alert-icon">ℹ️</span>
+          Nilai akan ditampilkan setelah guru membuka hasil ujian.
+        </div>`}
+
+        <!-- Waktu Submit -->
+        <div style="text-align:center;margin-bottom:20px">
+          <div style="font-size:12px;color:var(--gray-400)">Dikumpulkan pada</div>
+          <div style="font-size:14px;font-weight:600;color:var(--gray-700)">${Utils.formatDateTime(hasil.submittedAt)}</div>
+        </div>
+
+        <!-- Review Jawaban (jika nilai ditampilkan) -->
+        ${showScore && hasil.scoring?.detail ? buildAnswerReview() : ''}
+
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:20px">
+          <a href="dashboard-siswa.html" class="btn btn-primary btn-full">🏠 Kembali ke Beranda</a>
+        </div>
+
+        <p style="text-align:center;font-size:12px;color:var(--gray-400);margin-top:16px">
+          Terima kasih telah mengikuti ujian dengan jujur 🎓
+        </p>
+      </div>
+    </div>
+  </div>`;
+}
+
+function buildAnswerReview() {
+  if (!ujian || !hasil.answers) return '';
+  const soalList = (ujian.soalIds||[]).map(id => DB.getSoalById(id)).filter(Boolean);
+  
+  return `
+  <div style="margin-top:20px">
+    <h3 style="font-family:var(--font-heading);font-size:16px;font-weight:700;margin-bottom:12px">📝 Review Jawaban</h3>
+    ${soalList.map((s, i) => {
+      const d = hasil.scoring?.detail?.[s.id];
+      const userAnswer = hasil.answers[s.id];
+      const isBenar = d?.benar;
+      const isManual = d?.status === 'manual';
+      return `
+      <div style="padding:12px;border-radius:var(--radius);border:1px solid ${isManual?'var(--gray-200)':isBenar?'#BBF7D0':'#FECACA'};background:${isManual?'var(--gray-50)':isBenar?'#F0FDF4':'#FFF1F2'};margin-bottom:8px">
+        <div style="font-size:11px;font-weight:700;color:var(--gray-400);margin-bottom:4px">Soal ${i+1} ${isManual?'📝 (dinilai guru)':isBenar?'✅':'❌'}</div>
+        <div style="font-size:13px;color:var(--gray-700);margin-bottom:6px">${Utils.escapeHtml(s.pertanyaan)}</div>
+        <div style="font-size:12px">
+          Jawaban Anda: <strong>${Utils.escapeHtml(String(userAnswer||'-'))}</strong>
+          ${!isManual && !isBenar ? ` | Kunci: <strong style="color:var(--success)">${Utils.escapeHtml(String(s.jawaban||'-'))}</strong>` : ''}
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function buildSuspendedPage() {
+  return `
+  <div style="min-height:100vh;background:#1F2937;display:flex;align-items:center;justify-content:center;padding:20px">
+    <div style="text-align:center;color:white;max-width:500px">
+      <div style="font-size:80px;margin-bottom:24px">🚫</div>
+      <h1 style="font-family:var(--font-heading);font-size:28px;font-weight:800;color:#F87171;margin-bottom:12px">Ujian Ditangguhkan</h1>
+      <p style="font-size:15px;opacity:0.8;margin-bottom:24px;line-height:1.6">
+        Ujian Anda telah ditangguhkan karena melampaui batas pelanggaran.<br/>
+        Silakan hubungi guru untuk mendapatkan verifikasi.
+      </p>
+      <div style="background:rgba(255,255,255,0.1);border-radius:var(--radius);padding:16px;margin-bottom:24px">
+        <div style="font-size:13px;opacity:0.7">Pelanggaran: <strong>${hasil.violationCount||0}x</strong></div>
+        <div style="font-size:13px;opacity:0.7;margin-top:4px">Waktu: <strong>${Utils.formatDateTime(hasil.submittedAt)}</strong></div>
+      </div>
+      <a href="dashboard-siswa.html" class="btn btn-secondary">🚪 Keluar ke Beranda</a>
+    </div>
+  </div>`;
+}
+</script>
+</body>
+</html>

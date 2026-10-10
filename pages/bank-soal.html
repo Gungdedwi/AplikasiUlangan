@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Bank Soal - Ulangan Digital</title>
+  <link rel="stylesheet" href="../css/style.css"/>
+</head>
+<body>
+<script src="../js/storage.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/layout.js"></script>
+<script>
+Auth.init();
+const session = Layout.initGuru('bank-soal');
+if (session) renderBankSoal();
+
+let filterTipe = 'semua';
+let filterMapel = 'semua';
+let searchQuery = '';
+let editingSoalId = null;
+
+function renderBankSoal() {
+  Layout.setPageTitle('Bank Soal');
+  const mapels = [...new Set(DB.getSoal().map(s => s.mapel).filter(Boolean))];
+
+  const content = `
+  <div class="animate-fade-in">
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="page-title">Bank Soal</h1>
+        <p class="page-subtitle">Kelola kumpulan soal untuk ujian</p>
+      </div>
+      <button onclick="openSoalModal()" class="btn btn-primary">➕ Tambah Soal</button>
+    </div>
+
+    <!-- Filter & Search -->
+    <div class="card mb-4">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        <div class="input-wrapper" style="flex:1;min-width:200px">
+          <span class="input-icon">🔍</span>
+          <input type="text" id="search-soal" class="form-control" placeholder="Cari soal..." oninput="searchQuery=this.value;renderSoalList()"/>
+        </div>
+        <select class="form-control" style="width:auto" onchange="filterMapel=this.value;renderSoalList()">
+          <option value="semua">Semua Mapel</option>
+          ${mapels.map(m => `<option value="${Utils.escapeHtml(m)}">${Utils.escapeHtml(m)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="question-type-tabs mt-4">
+        ${[
+          {id:'semua',label:'📋 Semua'},
+          {id:'pg',label:'🔘 Pilihan Ganda'},
+          {id:'bs',label:'✅ Benar/Salah'},
+          {id:'isian',label:'✏️ Isian'},
+          {id:'uraian',label:'📝 Uraian'},
+        ].map(t => `<button class="q-type-btn ${filterTipe===t.id?'active':''}" onclick="filterTipe='${t.id}';renderSoalList();document.querySelectorAll('.q-type-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">${t.label}</button>`).join('')}
+      </div>
+    </div>
+
+    <div id="soal-list-container"></div>
+  </div>
+  
+  <!-- Modal Soal -->
+  <div id="modal-soal" class="modal-backdrop" style="display:none">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modal-soal-title">Tambah Soal Baru</h3>
+        <button class="modal-close" onclick="closeSoalModal()">✕</button>
+      </div>
+      <div class="modal-body" id="modal-soal-body">
+      </div>
+    </div>
+  </div>`;
+
+  Layout.setContent(content);
+  renderSoalList();
+}
+
+function renderSoalList() {
+  let list = DB.getSoal().filter(s => s.pembuatId === session.userId);
+  if (filterTipe !== 'semua') list = list.filter(s => s.tipe === filterTipe);
+  if (filterMapel !== 'semua') list = list.filter(s => s.mapel === filterMapel);
+  if (searchQuery.trim()) {
+    const q = searchQuery.toLowerCase();
+    list = list.filter(s => s.pertanyaan?.toLowerCase().includes(q) || s.bab?.toLowerCase().includes(q));
+  }
+
+  const container = document.getElementById('soal-list-container');
+  if (!container) return;
+
+  if (list.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">📭</div>
+        <div class="empty-state-title">Belum ada soal</div>
+        <div class="empty-state-text">Klik "Tambah Soal" untuk mulai membuat soal</div>
+      </div>`;
+    return;
+  }
+
+  const tipeBadge = {pg:'🔘 PG', bs:'✅ B/S', isian:'✏️ Isian', uraian:'📝 Uraian'};
+  const tingkatColor = {mudah:'badge-success', sedang:'badge-warning', sulit:'badge-danger'};
+
+  container.innerHTML = `
+    <div style="margin-bottom:12px;color:var(--gray-500);font-size:13px">${list.length} soal ditemukan</div>
+    ${list.map((s,i) => `
+    <div class="soal-card">
+      <div class="soal-card-header">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:13px;font-weight:700;color:var(--gray-400)">#${i+1}</span>
+          <span class="badge badge-primary">${tipeBadge[s.tipe] || s.tipe}</span>
+          <span class="badge ${tingkatColor[s.tingkat] || 'badge-gray'}">${s.tingkat || '-'}</span>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button onclick="openSoalModal('${s.id}')" class="btn btn-sm btn-outline">✏️ Edit</button>
+          <button onclick="hapusSoal('${s.id}')" class="btn btn-sm btn-danger">🗑️</button>
+        </div>
+      </div>
+      <div class="soal-text">${Utils.escapeHtml(s.pertanyaan)}</div>
+      <div class="soal-meta">
+        <span class="badge badge-gray">📚 ${Utils.escapeHtml(s.mapel||'-')}</span>
+        <span class="badge badge-gray">📖 ${Utils.escapeHtml(s.bab||'-')}</span>
+        <span class="badge badge-gray">🎯 Bobot: ${s.bobot||1}</span>
+        ${s.tipe==='pg' ? `<span class="badge badge-info">Kunci: ${s.jawaban}</span>` : ''}
+      </div>
+      ${s.tipe==='pg' && s.pilihan ? `
+      <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">
+        ${s.pilihan.map((p,pi) => `
+          <span style="padding:4px 10px;border-radius:6px;font-size:12px;background:${s.jawaban===String.fromCharCode(65+pi)?'var(--primary-pale)':'var(--gray-50)'};border:1px solid ${s.jawaban===String.fromCharCode(65+pi)?'var(--primary)':'var(--gray-200)'};color:${s.jawaban===String.fromCharCode(65+pi)?'var(--primary)':'var(--gray-600)'}">
+            ${String.fromCharCode(65+pi)}. ${Utils.escapeHtml(p)}
+          </span>`).join('')}
+      </div>` : ''}
+    </div>`).join('')}`;
+}
+
+function openSoalModal(id = null) {
+  editingSoalId = id;
+  const existing = id ? DB.getSoalById(id) : null;
+  document.getElementById('modal-soal-title').textContent = id ? 'Edit Soal' : 'Tambah Soal Baru';
+  document.getElementById('modal-soal-body').innerHTML = buildSoalForm(existing);
+  document.getElementById('modal-soal').style.display = 'flex';
+  const tipeEl = document.getElementById('soal-tipe');
+  if (tipeEl) tipeEl.dispatchEvent(new Event('change'));
+}
+
+function closeSoalModal() {
+  document.getElementById('modal-soal').style.display = 'none';
+  editingSoalId = null;
+}
+
+function buildSoalForm(soal) {
+  const tipe = soal?.tipe || 'pg';
+  return `
+    <form onsubmit="saveSoal(event)" novalidate>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Tipe Soal <span class="required">*</span></label>
+          <select id="soal-tipe" class="form-control" onchange="updateSoalForm(this.value)">
+            <option value="pg" ${tipe==='pg'?'selected':''}>Pilihan Ganda</option>
+            <option value="bs" ${tipe==='bs'?'selected':''}>Benar / Salah</option>
+            <option value="isian" ${tipe==='isian'?'selected':''}>Isian Singkat</option>
+            <option value="uraian" ${tipe==='uraian'?'selected':''}>Uraian</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Mata Pelajaran <span class="required">*</span></label>
+          <input type="text" id="soal-mapel" class="form-control" value="${Utils.escapeHtml(soal?.mapel||'')}" placeholder="e.g. Matematika" maxlength="50"/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Kelas</label>
+          <input type="text" id="soal-kelas" class="form-control" value="${Utils.escapeHtml(soal?.kelas||'')}" placeholder="e.g. XI" maxlength="20"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Bab / Topik</label>
+          <input type="text" id="soal-bab" class="form-control" value="${Utils.escapeHtml(soal?.bab||'')}" placeholder="e.g. Aljabar" maxlength="100"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tingkat Kesulitan</label>
+          <select id="soal-tingkat" class="form-control">
+            <option value="mudah" ${soal?.tingkat==='mudah'?'selected':''}>Mudah</option>
+            <option value="sedang" ${soal?.tingkat==='sedang'?'selected':''}>Sedang</option>
+            <option value="sulit" ${soal?.tingkat==='sulit'?'selected':''}>Sulit</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Bobot Nilai</label>
+          <input type="number" id="soal-bobot" class="form-control" value="${soal?.bobot||1}" min="1" max="100"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Pertanyaan / Soal <span class="required">*</span></label>
+        <textarea id="soal-pertanyaan" class="form-control" rows="3" placeholder="Tulis soal di sini..." maxlength="2000">${Utils.escapeHtml(soal?.pertanyaan||'')}</textarea>
+      </div>
+      
+      <!-- Dynamic answer section -->
+      <div id="soal-jawaban-section">
+        ${buildJawabanSection(soal)}
+      </div>
+
+      <div class="modal-footer" style="padding:0;border:none;margin-top:16px">
+        <button type="button" onclick="closeSoalModal()" class="btn btn-secondary">Batal</button>
+        <button type="submit" class="btn btn-primary">💾 Simpan Soal</button>
+      </div>
+    </form>`;
+}
+
+function buildJawabanSection(soal) {
+  const tipe = document.getElementById('soal-tipe')?.value || soal?.tipe || 'pg';
+  
+  if (tipe === 'pg') {
+    const pilihanArr = soal?.pilihan?.length === 5 ? soal.pilihan : ['','','','',''];
+    return `
+      <div class="form-group">
+        <label class="form-label">Pilihan Jawaban <span class="required">*</span></label>
+        ${pilihanArr.map((p,i) => `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="width:28px;height:28px;background:var(--primary);color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">${String.fromCharCode(65+i)}</span>
+          <input type="text" id="pilihan-${i}" class="form-control" value="${Utils.escapeHtml(p)}" placeholder="Pilihan ${String.fromCharCode(65+i)}" maxlength="500"/>
+        </div>`).join('')}
+      </div>
+      <div class="form-group">
+        <label class="form-label">Kunci Jawaban <span class="required">*</span></label>
+        <select id="soal-kunci" class="form-control">
+          ${['A','B','C','D','E'].map(k => `<option value="${k}" ${soal?.jawaban===k?'selected':''}>${k}</option>`).join('')}
+        </select>
+      </div>`;
+  } else if (tipe === 'bs') {
+    return `
+      <div class="form-group">
+        <label class="form-label">Kunci Jawaban <span class="required">*</span></label>
+        <select id="soal-kunci" class="form-control">
+          <option value="Benar" ${soal?.jawaban==='Benar'?'selected':''}>✅ Benar</option>
+          <option value="Salah" ${soal?.jawaban==='Salah'?'selected':''}>❌ Salah</option>
+        </select>
+      </div>`;
+  } else if (tipe === 'isian') {
+    return `
+      <div class="form-group">
+        <label class="form-label">Kunci Jawaban <span class="required">*</span></label>
+        <input type="text" id="soal-kunci" class="form-control" value="${Utils.escapeHtml(soal?.jawaban||'')}" placeholder="Jawaban yang benar" maxlength="500"/>
+        <div class="form-hint">Pengecekan tidak case-sensitive</div>
+      </div>`;
+  } else if (tipe === 'uraian') {
+    return `
+      <div class="form-group">
+        <label class="form-label">Pedoman Penilaian / Kunci Jawaban</label>
+        <textarea id="soal-kunci" class="form-control" rows="3" placeholder="Masukkan pedoman penilaian..." maxlength="2000">${Utils.escapeHtml(soal?.jawaban||'')}</textarea>
+        <div class="form-hint">Uraian perlu dinilai manual oleh guru</div>
+      </div>`;
+  }
+  return '';
+}
+
+function updateSoalForm(tipe) {
+  const section = document.getElementById('soal-jawaban-section');
+  if (section) section.innerHTML = buildJawabanSection(null);
+}
+
+function saveSoal(e) {
+  e.preventDefault();
+  Utils.clearFieldErrors();
+  
+  const tipe = document.getElementById('soal-tipe').value;
+  const pertanyaan = Utils.sanitizeInput(document.getElementById('soal-pertanyaan').value);
+  const mapel = Utils.sanitizeInput(document.getElementById('soal-mapel').value);
+  
+  if (!pertanyaan) { Utils.toast('Pertanyaan wajib diisi', 'error'); return; }
+  if (!mapel) { Utils.toast('Mata pelajaran wajib diisi', 'error'); return; }
+
+  const soalData = {
+    tipe,
+    mapel,
+    kelas: Utils.sanitizeInput(document.getElementById('soal-kelas').value),
+    bab: Utils.sanitizeInput(document.getElementById('soal-bab').value),
+    tingkat: document.getElementById('soal-tingkat').value,
+    bobot: parseInt(document.getElementById('soal-bobot').value) || 1,
+    pertanyaan,
+    pembuatId: session.userId,
+  };
+
+  if (tipe === 'pg') {
+    const pilihan = [0,1,2,3,4].map(i => Utils.sanitizeInput(document.getElementById(`pilihan-${i}`).value));
+    if (pilihan.some(p => !p.trim())) { Utils.toast('Semua pilihan jawaban wajib diisi', 'error'); return; }
+    soalData.pilihan = pilihan;
+    soalData.jawaban = document.getElementById('soal-kunci').value;
+  } else {
+    const kunci = document.getElementById('soal-kunci');
+    soalData.jawaban = kunci ? Utils.sanitizeInput(kunci.value) : '';
+  }
+
+  if (editingSoalId) {
+    DB.updateSoal(editingSoalId, soalData);
+    Utils.toast('Soal berhasil diperbarui', 'success');
+  } else {
+    DB.addSoal(soalData);
+    Utils.toast('Soal berhasil ditambahkan', 'success');
+  }
+  
+  closeSoalModal();
+  renderSoalList();
+}
+
+function hapusSoal(id) {
+  Utils.confirm('Hapus Soal', 'Yakin ingin menghapus soal ini? Tindakan ini tidak dapat dibatalkan.', () => {
+    DB.deleteSoal(id);
+    Utils.toast('Soal berhasil dihapus', 'success');
+    renderSoalList();
+  });
+}
+
+// Close modal on backdrop click
+document.addEventListener('click', e => {
+  const modal = document.getElementById('modal-soal');
+  if (modal && e.target === modal) closeSoalModal();
+});
+</script>
+</body>
+</html>

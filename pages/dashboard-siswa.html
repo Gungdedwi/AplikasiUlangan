@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dashboard Siswa - Ulangan Digital</title>
+  <link rel="stylesheet" href="../css/style.css"/>
+</head>
+<body>
+<div id="toast-container"></div>
+<script src="../js/storage.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/auth.js"></script>
+<script>
+Auth.init();
+const session = Auth.requireRole('siswa', '../index.html');
+if (!session) throw new Error('Unauthorized');
+
+// Ambil riwayat ujian siswa ini
+const hasilList = DB.getHasilBySiswa(session.userId).sort((a,b) => b.submittedAt - a.submittedAt);
+
+document.body.innerHTML = `
+<div style="min-height:100vh;background:linear-gradient(135deg,#EFF6FF 0%,#F0F9FF 100%)">
+  <!-- Topbar -->
+  <header style="background:white;border-bottom:1px solid var(--gray-200);padding:0 24px;height:64px;display:flex;align-items:center;justify-content:space-between;box-shadow:var(--shadow-sm);position:sticky;top:0;z-index:50">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div style="width:36px;height:36px;background:linear-gradient(135deg,var(--primary),var(--secondary));border-radius:var(--radius);display:flex;align-items:center;justify-content:center;font-size:18px;color:white">📝</div>
+      <div>
+        <div style="font-family:var(--font-heading);font-weight:700;font-size:15px;color:var(--gray-900)">Ulangan Digital</div>
+        <div style="font-size:11px;color:var(--gray-400)">Portal Siswa</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="text-align:right;display:none" id="user-info-desktop">
+        <div style="font-size:13px;font-weight:600;color:var(--gray-800)">${Utils.escapeHtml(session.name)}</div>
+        <div style="font-size:11px;color:var(--gray-400)">${Utils.escapeHtml(session.kelas||'Siswa')}</div>
+      </div>
+      <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--secondary));color:white;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center">${Utils.getInitials(session.name)}</div>
+      <button onclick="Auth.logout()" class="btn btn-sm btn-secondary">🚪 Keluar</button>
+    </div>
+  </header>
+
+  <div style="max-width:700px;margin:0 auto;padding:32px 20px">
+    <!-- Welcome Card -->
+    <div style="background:linear-gradient(135deg,var(--primary),var(--secondary));border-radius:var(--radius-xl);padding:32px;color:white;margin-bottom:24px;position:relative;overflow:hidden">
+      <div style="position:absolute;top:-20px;right:-20px;width:120px;height:120px;background:rgba(255,255,255,0.1);border-radius:50%"></div>
+      <div style="position:absolute;bottom:-40px;right:60px;width:80px;height:80px;background:rgba(255,255,255,0.05);border-radius:50%"></div>
+      <div style="position:relative;z-index:1">
+        <div style="font-size:32px;margin-bottom:8px">👋</div>
+        <h1 style="font-family:var(--font-heading);font-size:22px;font-weight:800;margin-bottom:4px">Halo, ${Utils.escapeHtml(session.name.split(' ')[0])}!</h1>
+        <p style="opacity:0.85;font-size:14px">${Utils.escapeHtml(session.kelas||'Siswa')} • Siap mengikuti ujian?</p>
+      </div>
+    </div>
+
+    <!-- Input Kode Ujian -->
+    <div class="card mb-6" style="box-shadow:var(--shadow-lg)">
+      <h2 style="font-family:var(--font-heading);font-size:18px;font-weight:700;color:var(--gray-900);margin-bottom:4px">🔑 Masukkan Kode Ujian</h2>
+      <p style="font-size:13px;color:var(--gray-500);margin-bottom:20px">Minta kode ujian dari guru Anda</p>
+
+      <div id="kode-error" class="alert alert-danger" style="display:none">
+        <span class="alert-icon">❌</span>
+        <span id="kode-error-msg">Kode ujian tidak ditemukan</span>
+      </div>
+
+      <form onsubmit="cariUjian(event)" novalidate>
+        <div style="margin-bottom:20px">
+          <label class="form-label">Kode Ujian (6 digit)</label>
+          <div class="code-input-wrapper">
+            ${[0,1,2,3,4,5].map(i => `<input type="text" id="code-${i}" class="code-digit" maxlength="1" pattern="[A-Za-z0-9]" autocomplete="off" oninput="handleCodeInput(this,${i})" onkeydown="handleCodeKeydown(this,event,${i})"/>`).join('')}
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full btn-lg" id="btn-cari">
+          🔍 Cari Ujian
+        </button>
+      </form>
+    </div>
+
+    <!-- Preview Ujian -->
+    <div id="ujian-preview" style="display:none" class="card mb-6" style="box-shadow:var(--shadow-lg);border:2px solid var(--primary)">
+    </div>
+
+    <!-- Riwayat Hasil -->
+    ${hasilList.length > 0 ? `
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">📊 Riwayat Ujian Saya</h3>
+      </div>
+      ${hasilList.map(h => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--gray-100)">
+        <div>
+          <div style="font-size:14px;font-weight:600;color:var(--gray-800)">${Utils.escapeHtml(h.ujianJudul)}</div>
+          <div style="font-size:12px;color:var(--gray-400);margin-top:2px">${Utils.formatDateTime(h.submittedAt)}</div>
+          <div style="margin-top:4px">${h.status === 'ditangguhkan' ? '<span class="badge badge-danger">🚫 Ditangguhkan</span>' : h.status === 'berlangsung' ? '<span class="badge badge-info">⏳ Berlangsung</span>' : '<span class="badge badge-success">✅ Selesai</span>'}</div>
+        </div>
+        <div style="text-align:right">
+          ${h.nilai !== null ? `
+          <div style="font-size:28px;font-weight:800;color:${h.lulus ? 'var(--success)' : 'var(--danger)'}">${Utils.formatScore(h.nilai)}</div>
+          <div style="font-size:11px;color:var(--gray-400)">${h.lulus ? '✅ Lulus' : '❌ Tidak Lulus'}</div>
+          ` : `<div style="font-size:13px;color:var(--gray-400)">Menunggu</div>`}
+        </div>
+      </div>`).join('')}
+    </div>` : ''}
+  </div>
+</div>`;
+
+function handleCodeInput(el, idx) {
+  const val = el.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  el.value = val;
+  document.getElementById('kode-error').style.display = 'none';
+  if (val && idx < 5) {
+    document.getElementById(`code-${idx+1}`)?.focus();
+  }
+  // Auto submit jika semua terisi
+  const kode = [0,1,2,3,4,5].map(i => document.getElementById(`code-${i}`).value).join('');
+  if (kode.length === 6) checkAutoPreview(kode);
+}
+
+function handleCodeKeydown(el, e, idx) {
+  if (e.key === 'Backspace' && !el.value && idx > 0) {
+    document.getElementById(`code-${idx-1}`)?.focus();
+  }
+}
+
+function getKode() {
+  return [0,1,2,3,4,5].map(i => (document.getElementById(`code-${i}`)?.value||'').toUpperCase()).join('');
+}
+
+function checkAutoPreview(kode) {
+  if (kode.length !== 6) return;
+  const ujian = DB.getUjianByKode(kode);
+  if (!ujian) return;
+  showUjianPreview(ujian);
+}
+
+function showUjianPreview(ujian) {
+  const sudahSelesai = DB.getHasilBySiswaUjian(session.userId, ujian.id);
+  const isAktif = Utils.isUjianAktif(ujian);
+  const isBelumMulai = Utils.isUjianBelumMulai(ujian);
+  const preview = document.getElementById('ujian-preview');
+  
+  let statusHtml = '';
+  let btnHtml = '';
+  
+  if (sudahSelesai && sudahSelesai.status === 'selesai') {
+    statusHtml = '<div class="alert alert-success"><span class="alert-icon">✅</span>Anda sudah menyelesaikan ujian ini.</div>';
+    btnHtml = `<a href="selesai.html?hasilId=${sudahSelesai.id}" class="btn btn-success btn-full">📊 Lihat Hasil</a>`;
+  } else if (sudahSelesai && sudahSelesai.status === 'ditangguhkan') {
+    statusHtml = '<div class="alert alert-danger"><span class="alert-icon">🚫</span>Ujian Anda ditangguhkan. Hubungi guru untuk verifikasi.</div>';
+    btnHtml = `<button class="btn btn-danger btn-full" disabled>🚫 Ujian Ditangguhkan</button>`;
+  } else if (isBelumMulai) {
+    statusHtml = `<div class="alert alert-warning"><span class="alert-icon">⏳</span>Ujian belum dimulai. Jadwal mulai: <strong>${Utils.formatDateTime(new Date(ujian.jadwalMulai).getTime())}</strong></div>`;
+    btnHtml = `<button class="btn btn-warning btn-full" disabled>⏳ Belum Dimulai</button>`;
+  } else if (!isAktif) {
+    statusHtml = '<div class="alert alert-danger"><span class="alert-icon">❌</span>Ujian ini sudah berakhir atau tidak aktif.</div>';
+    btnHtml = `<button class="btn btn-secondary btn-full" disabled>❌ Ujian Tidak Aktif</button>`;
+  } else {
+    btnHtml = `<a href="instruksi.html?ujianId=${ujian.id}" class="btn btn-primary btn-full btn-lg">📋 Lihat Instruksi & Mulai →</a>`;
+  }
+
+  preview.innerHTML = `
+    <div style="background:linear-gradient(135deg,var(--primary),var(--secondary));color:white;padding:20px;border-radius:var(--radius-lg) var(--radius-lg) 0 0;margin:-24px -24px 20px">
+      <div style="font-size:11px;opacity:0.7;font-weight:700;text-transform:uppercase;letter-spacing:1px">Ujian Ditemukan</div>
+      <h3 style="font-family:var(--font-heading);font-size:18px;font-weight:800;margin-top:4px">${Utils.escapeHtml(ujian.judul)}</h3>
+    </div>
+    ${statusHtml}
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+      <div style="text-align:center;background:var(--gray-50);padding:12px;border-radius:var(--radius)">
+        <div style="font-size:20px;font-weight:700;color:var(--primary)">${ujian.durasi}m</div>
+        <div style="font-size:11px;color:var(--gray-400)">Durasi</div>
+      </div>
+      <div style="text-align:center;background:var(--gray-50);padding:12px;border-radius:var(--radius)">
+        <div style="font-size:20px;font-weight:700;color:var(--primary)">${ujian.soalIds?.length||0}</div>
+        <div style="font-size:11px;color:var(--gray-400)">Soal</div>
+      </div>
+      <div style="text-align:center;background:var(--gray-50);padding:12px;border-radius:var(--radius)">
+        <div style="font-size:20px;font-weight:700;color:var(--primary)">${ujian.kkm||75}</div>
+        <div style="font-size:11px;color:var(--gray-400)">KKM</div>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--gray-500);margin-bottom:4px">👨‍🏫 ${Utils.escapeHtml(ujian.guru||'Guru')} • 📚 ${Utils.escapeHtml(ujian.mapel||'-')}</p>
+    <div class="divider"></div>
+    ${btnHtml}`;
+
+  preview.style.display = 'block';
+}
+
+function cariUjian(e) {
+  e.preventDefault();
+  const kode = getKode();
+  document.getElementById('kode-error').style.display = 'none';
+  
+  if (kode.length !== 6) {
+    document.getElementById('kode-error').style.display = 'flex';
+    document.getElementById('kode-error-msg').textContent = 'Masukkan 6 digit kode ujian';
+    return;
+  }
+  
+  const ujian = DB.getUjianByKode(kode);
+  if (!ujian) {
+    document.getElementById('kode-error').style.display = 'flex';
+    document.getElementById('kode-error-msg').textContent = 'Kode ujian tidak ditemukan. Periksa kembali kode Anda.';
+    document.getElementById('ujian-preview').style.display = 'none';
+    return;
+  }
+  
+  showUjianPreview(ujian);
+}
+
+// Focus ke kotak pertama
+setTimeout(() => document.getElementById('code-0')?.focus(), 100);
+</script>
+</body>
+</html>

@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="description" content="Dashboard Guru - Aplikasi Ulangan Digital"/>
+  <title>Dashboard Guru - Ulangan Digital</title>
+  <link rel="stylesheet" href="../css/style.css"/>
+</head>
+<body>
+<script src="../js/storage.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/layout.js"></script>
+<script>
+Auth.init();
+const session = Layout.initGuru('dashboard');
+if (session) renderDashboard();
+
+function renderDashboard() {
+  Layout.setPageTitle('Dashboard');
+  
+  const ujianList = DB.getUjian().filter(u => u.guruId === session.userId);
+  const hasilList = DB.getHasil();
+  const soalList = DB.getSoal().filter(s => s.pembuatId === session.userId);
+  const logs = DB.getLogs();
+  const siswaCount = DB.getUsers().filter(u => u.role === 'siswa').length;
+  
+  const aktifCount = ujianList.filter(u => Utils.isUjianAktif(u)).length;
+  const selesaiHasil = hasilList.filter(h => h.status === 'selesai');
+  const avgNilai = selesaiHasil.length ? (selesaiHasil.reduce((a,b) => a + (b.nilai||0), 0) / selesaiHasil.length).toFixed(1) : '-';
+  const lulusCount = selesaiHasil.filter(h => h.lulus).length;
+  const violationLogs = logs.filter(l => l.category === 'violation');
+
+  const recentLogs = logs.filter(l => l.category === 'exam' || l.category === 'violation').slice(0, 8);
+  const recentHasil = hasilList.filter(h => h.status === 'selesai').sort((a,b) => b.submittedAt - a.submittedAt).slice(0, 5);
+
+  const content = `
+  <div class="animate-fade-in">
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="page-title">Dashboard</h1>
+        <p class="page-subtitle">Selamat datang kembali, ${Utils.escapeHtml(session.name)}! 👋</p>
+      </div>
+      <a href="manajemen-ujian.html" class="btn btn-primary">
+        ➕ Buat Ujian Baru
+      </a>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon blue">📋</div>
+        <div>
+          <div class="stat-value">${ujianList.length}</div>
+          <div class="stat-label">Total Ujian</div>
+          <div class="stat-trend up">✅ ${aktifCount} aktif sekarang</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon green">📚</div>
+        <div>
+          <div class="stat-value">${soalList.length}</div>
+          <div class="stat-label">Bank Soal</div>
+          <div class="stat-trend up">📝 Soal tersedia</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon orange">🎓</div>
+        <div>
+          <div class="stat-value">${siswaCount}</div>
+          <div class="stat-label">Siswa Terdaftar</div>
+          <div class="stat-trend up">👤 Pengguna aktif</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon purple">📊</div>
+        <div>
+          <div class="stat-value">${avgNilai}</div>
+          <div class="stat-label">Rata-rata Nilai</div>
+          <div class="stat-trend ${parseFloat(avgNilai) >= 75 ? 'up' : 'down'}">${lulusCount} siswa lulus</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon red">⚠️</div>
+        <div>
+          <div class="stat-value">${violationLogs.length}</div>
+          <div class="stat-label">Total Pelanggaran</div>
+          <div class="stat-trend down">🔍 Perlu diperhatikan</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-2 gap-6" style="margin-top:24px">
+      <!-- Ujian Aktif -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">📋 Ujian Aktif</h3>
+          <a href="manajemen-ujian.html" class="btn btn-sm btn-outline">Lihat Semua</a>
+        </div>
+        ${ujianList.length === 0 ? `
+          <div class="empty-state">
+            <div class="empty-state-icon">📭</div>
+            <div class="empty-state-title">Belum ada ujian</div>
+            <div class="empty-state-text">Buat ujian pertama Anda</div>
+          </div>
+        ` : ujianList.slice(0,4).map(u => {
+          const hasil = DB.getHasilByUjian(u.id);
+          const statusBadge = Utils.isUjianAktif(u) ? '<span class="badge badge-success">🟢 Aktif</span>' : 
+            u.status === 'draft' ? '<span class="badge badge-gray">📝 Draft</span>' :
+            '<span class="badge badge-warning">⏸️ Tidak Aktif</span>';
+          return `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--gray-100)">
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:14px;color:var(--gray-800);margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.escapeHtml(u.judul)}</div>
+              <div style="font-size:12px;color:var(--gray-500)">${Utils.escapeHtml(u.mapel)} • ${Utils.escapeHtml(u.kelas)} • Kode: <strong>${u.kode}</strong></div>
+              <div style="font-size:12px;color:var(--gray-500);margin-top:2px">👥 ${hasil.length} peserta • ⏱️ ${u.durasi} menit</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;margin-left:12px">
+              ${statusBadge}
+              <a href="hasil.html?ujianId=${u.id}" class="btn btn-sm btn-outline">Hasil</a>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+
+      <!-- Aktivitas Terbaru -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">🔔 Aktivitas Terbaru</h3>
+          <a href="audit-log.html" class="btn btn-sm btn-outline">Lihat Semua</a>
+        </div>
+        ${recentLogs.length === 0 ? `
+          <div class="empty-state">
+            <div class="empty-state-icon">📭</div>
+            <div class="empty-state-title">Belum ada aktivitas</div>
+          </div>
+        ` : `
+        <div class="audit-timeline" style="padding-left:8px">
+          ${recentLogs.map(log => `
+          <div class="audit-item">
+            <div class="audit-dot ${log.severity === 'warning' ? 'warning' : log.severity === 'danger' ? 'danger' : log.severity === 'success' ? 'success' : 'info'}">
+              ${log.icon || '📌'}
+            </div>
+            <div class="audit-content">
+              <div class="audit-action">${Utils.escapeHtml(log.type?.replace(/_/g,' '))}</div>
+              <div class="audit-detail">${Utils.escapeHtml(log.actor || '-')} • ${Utils.escapeHtml(log.detail || '')}</div>
+              <div class="audit-time">${Utils.timeAgo(log.timestamp)}</div>
+            </div>
+          </div>`).join('')}
+        </div>`}
+      </div>
+    </div>
+
+    <!-- Hasil Terbaru -->
+    <div class="card mt-6">
+      <div class="card-header">
+        <h3 class="card-title">📊 Hasil Ujian Terbaru</h3>
+        <a href="hasil.html" class="btn btn-sm btn-outline">Lihat Semua</a>
+      </div>
+      ${recentHasil.length === 0 ? `
+        <div class="empty-state">
+          <div class="empty-state-icon">📭</div>
+          <div class="empty-state-title">Belum ada hasil ujian</div>
+        </div>
+      ` : `
+      <div class="table-wrapper">
+        <table>
+          <thead><tr>
+            <th>Siswa</th><th>Ujian</th><th>Nilai</th><th>Status</th><th>Pelanggaran</th><th>Waktu</th>
+          </tr></thead>
+          <tbody>
+            ${recentHasil.map(h => `
+            <tr>
+              <td><div style="font-weight:600">${Utils.escapeHtml(h.siswaName)}</div></td>
+              <td><div style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.escapeHtml(h.ujianJudul)}</div></td>
+              <td>
+                <span style="font-weight:700;font-size:16px;color:${h.lulus ? 'var(--success)' : 'var(--danger)'}">${Utils.formatScore(h.nilai)}</span>
+              </td>
+              <td>${h.lulus ? '<span class="badge badge-success">✅ Lulus</span>' : '<span class="badge badge-danger">❌ Tidak Lulus</span>'}</td>
+              <td>
+                ${h.violationCount > 0 ? `<span class="badge badge-warning">⚠️ ${h.violationCount}x</span>` : '<span class="badge badge-gray">—</span>'}
+              </td>
+              <td class="text-sm text-muted">${Utils.formatDuration(h.waktuPengerjaan)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`}
+    </div>
+
+    <!-- Statistik Distribusi Nilai -->
+    ${selesaiHasil.length > 0 ? `
+    <div class="card mt-6">
+      <div class="card-header">
+        <h3 class="card-title">📈 Distribusi Nilai</h3>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px">
+        ${buildDistribusiChart(selesaiHasil)}
+      </div>
+    </div>` : ''}
+  </div>`;
+
+  Layout.setContent(content);
+}
+
+function buildDistribusiChart(hasilList) {
+  const ranges = [
+    { label: '90-100 (Sangat Baik)', min: 90, max: 100, color: 'var(--success)' },
+    { label: '75-89 (Baik)', min: 75, max: 89, color: 'var(--primary)' },
+    { label: '60-74 (Cukup)', min: 60, max: 74, color: 'var(--warning)' },
+    { label: '0-59 (Kurang)', min: 0, max: 59, color: 'var(--danger)' },
+  ];
+  const total = hasilList.length;
+  return ranges.map(r => {
+    const count = hasilList.filter(h => h.nilai >= r.min && h.nilai <= r.max).length;
+    const pct = total > 0 ? Math.round((count/total)*100) : 0;
+    return `
+    <div class="progress-bar-container">
+      <div class="progress-label">
+        <span style="font-size:13px;color:var(--gray-700)">${r.label}</span>
+        <span style="font-weight:700;color:${r.color}">${count} siswa (${pct}%)</span>
+      </div>
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" style="width:${pct}%;background:${r.color}"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+</script>
+</body>
+</html>
