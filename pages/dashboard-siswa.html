@@ -85,7 +85,10 @@ document.body.innerHTML = `
       <div class="card-header">
         <h3 class="card-title">📊 Riwayat Ujian Saya</h3>
       </div>
-      ${hasilList.map(h => `
+      ${hasilList.map(h => {
+        const u = DB.getUjianById(h.ujianId);
+        const canViewScore = u?.tampilkanHasil || DB.getSettings().showScoreImmediately;
+        return `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--gray-100)">
         <div>
           <div style="font-size:14px;font-weight:600;color:var(--gray-800)">${Utils.escapeHtml(h.ujianJudul)}</div>
@@ -93,12 +96,16 @@ document.body.innerHTML = `
           <div style="margin-top:4px">${h.status === 'ditangguhkan' ? '<span class="badge badge-danger">🚫 Ditangguhkan</span>' : h.status === 'berlangsung' ? '<span class="badge badge-info">⏳ Berlangsung</span>' : '<span class="badge badge-success">✅ Selesai</span>'}</div>
         </div>
         <div style="text-align:right">
-          ${h.nilai !== null ? `
+          ${h.status === 'selesai' && canViewScore && h.nilai !== null ? `
           <div style="font-size:28px;font-weight:800;color:${h.lulus ? 'var(--success)' : 'var(--danger)'}">${Utils.formatScore(h.nilai)}</div>
           <div style="font-size:11px;color:var(--gray-400)">${h.lulus ? '✅ Lulus' : '❌ Tidak Lulus'}</div>
-          ` : `<div style="font-size:13px;color:var(--gray-400)">Menunggu</div>`}
+          <a href="selesai.html?hasilId=${h.id}" class="btn btn-sm btn-outline mt-2" style="font-size:11px;padding:3px 8px">Lihat Detail</a>
+          ` : h.status === 'berlangsung' ? `
+          <a href="ujian.html?ujianId=${h.ujianId}" class="btn btn-sm btn-primary">Lanjutkan</a>
+          ` : `<div style="font-size:12px;color:var(--gray-500);font-style:italic">Menunggu Pengumuman Guru</div>`}
         </div>
-      </div>`).join('')}
+      </div>`;
+      }).join('')}
     </div>` : ''}
   </div>
 </div>`;
@@ -136,6 +143,7 @@ function showUjianPreview(ujian) {
   const sudahSelesai = DB.getHasilBySiswaUjian(session.userId, ujian.id);
   const isAktif = Utils.isUjianAktif(ujian);
   const isBelumMulai = Utils.isUjianBelumMulai(ujian);
+  const canViewScore = ujian?.tampilkanHasil || DB.getSettings().showScoreImmediately;
   const preview = document.getElementById('ujian-preview');
   
   let statusHtml = '';
@@ -143,10 +151,13 @@ function showUjianPreview(ujian) {
   
   if (sudahSelesai && sudahSelesai.status === 'selesai') {
     statusHtml = '<div class="alert alert-success"><span class="alert-icon">✅</span>Anda sudah menyelesaikan ujian ini.</div>';
-    btnHtml = `<a href="selesai.html?hasilId=${sudahSelesai.id}" class="btn btn-success btn-full">📊 Lihat Hasil</a>`;
+    btnHtml = canViewScore ? `<a href="selesai.html?hasilId=${sudahSelesai.id}" class="btn btn-success btn-full">📊 Lihat Hasil</a>` : `<button class="btn btn-secondary btn-full" disabled>🔒 Hasil Menunggu Verifikasi Guru</button>`;
   } else if (sudahSelesai && sudahSelesai.status === 'ditangguhkan') {
     statusHtml = '<div class="alert alert-danger"><span class="alert-icon">🚫</span>Ujian Anda ditangguhkan. Hubungi guru untuk verifikasi.</div>';
     btnHtml = `<button class="btn btn-danger btn-full" disabled>🚫 Ujian Ditangguhkan</button>`;
+  } else if (sudahSelesai && sudahSelesai.status === 'berlangsung') {
+    statusHtml = '<div class="alert alert-info"><span class="alert-icon">⏳</span>Anda memiliki sesi ujian yang sedang berlangsung.</div>';
+    btnHtml = `<a href="ujian.html?ujianId=${ujian.id}" class="btn btn-warning btn-full btn-lg">▶️ Lanjutkan Ujian</a>`;
   } else if (isBelumMulai) {
     statusHtml = `<div class="alert alert-warning"><span class="alert-icon">⏳</span>Ujian belum dimulai. Jadwal mulai: <strong>${Utils.formatDateTime(new Date(ujian.jadwalMulai).getTime())}</strong></div>`;
     btnHtml = `<button class="btn btn-warning btn-full" disabled>⏳ Belum Dimulai</button>`;

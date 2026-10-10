@@ -24,6 +24,25 @@
 <body>
 <div id="toast-container"></div>
 
+<!-- Offline Network Banner -->
+<div id="offline-banner" style="display:none;background:#FEF3C7;color:#92400E;padding:10px 16px;font-size:13px;font-weight:600;text-align:center;border-bottom:1.5px solid #F59E0B;position:relative;z-index:999;align-items:center;justify-content:center;gap:8px">
+  <span>⚠️</span> Koneksi terputus. Jawaban Anda tetap tersimpan otomatis di penyimpanan lokal.
+</div>
+
+<!-- Enter Fullscreen Initial Overlay -->
+<div class="suspended-overlay" id="enter-fullscreen-overlay" style="display:none;background:rgba(15,23,42,0.95);backdrop-filter:blur(10px);z-index:1000">
+  <div style="background:white;border-radius:var(--radius-xl);padding:36px;max-width:480px;width:100%;text-align:center;box-shadow:var(--shadow-xl)" class="animate-scale-in">
+    <div style="font-size:48px;margin-bottom:12px">🛡️</div>
+    <h2 style="font-family:var(--font-heading);font-size:22px;font-weight:800;color:var(--gray-900);margin-bottom:8px">Masuk Mode Ujian</h2>
+    <p style="font-size:14px;color:var(--gray-600);margin-bottom:24px;line-height:1.5">
+      Aplikasi akan masuk ke mode <strong>Layar Penuh (Fullscreen)</strong>. Selama ujian berlangsung, aktivitas meninggalkan halaman atau berpindah tab akan dicatat sebagai pelanggaran.
+    </p>
+    <button onclick="masukLayarPenuh()" class="btn btn-primary btn-full btn-xl">
+      🖥️ Masuk Layar Penuh & Mulai Ujian
+    </button>
+  </div>
+</div>
+
 <!-- Violation Overlay -->
 <div class="violation-overlay" id="violation-overlay">
   <div class="violation-card animate-scale-in">
@@ -149,6 +168,25 @@ document.body.insertAdjacentHTML('beforeend', `
   </div>
 </div>`);
 
+let violationDetectionStarted = false;
+
+function activateExamMode() {
+  if (!violationDetectionStarted) {
+    ExamEngine.setupViolationDetection(onViolation, onSuspended);
+    violationDetectionStarted = true;
+  }
+}
+
+async function masukLayarPenuh() {
+  try {
+    await Utils.requestFullscreen();
+  } catch (e) {
+    console.warn('Fullscreen request:', e);
+  }
+  document.getElementById('enter-fullscreen-overlay').style.display = 'none';
+  activateExamMode();
+}
+
 // INIT EXAM ENGINE
 (async () => {
   hasilData = await ExamEngine.init(ujian, session);
@@ -162,8 +200,13 @@ document.body.insertAdjacentHTML('beforeend', `
   const settings = DB.getSettings();
   ExamEngine.startAutosave(settings.autosaveInterval || 30);
   
-  // Mulai violation detection
-  ExamEngine.setupViolationDetection(onViolation, onSuspended);
+  // Deteksi Fullscreen
+  const requireFs = settings.requireFullscreen !== false;
+  if (requireFs && !Utils.isFullscreen()) {
+    document.getElementById('enter-fullscreen-overlay').style.display = 'flex';
+  } else {
+    activateExamMode();
+  }
   
   // Init timer display
   updateTimerDisplay(ExamEngine.state.timerSeconds);
@@ -176,6 +219,20 @@ document.body.insertAdjacentHTML('beforeend', `
       setTimeout(() => { if(el) el.style.display = 'none'; }, 2000);
     }
   }, 30000);
+
+  // Network connection listeners (Offline recovery)
+  window.addEventListener('offline', () => {
+    const banner = document.getElementById('offline-banner');
+    if (banner) banner.style.display = 'flex';
+    Utils.toast('⚠️ Koneksi terputus. Jawaban tetap tersimpan di perangkat lokal.', 'warning', 4000);
+  });
+
+  window.addEventListener('online', () => {
+    const banner = document.getElementById('offline-banner');
+    if (banner) banner.style.display = 'none';
+    Utils.toast('✅ Koneksi kembali terhubung. Sinkronisasi berhasil.', 'success', 3000);
+    ExamEngine._autosave();
+  });
 })();
 
 // === TIMER ===

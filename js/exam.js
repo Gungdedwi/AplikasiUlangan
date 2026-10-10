@@ -150,10 +150,18 @@ const ExamEngine = {
   // === VIOLATIONS ===
   recordViolation(type, detail) {
     if (this.state.ended) return;
+    
+    // Cegah pencatatan dobel dari blur dan visibilitychange yang terjadi bersamaan
+    const now = Date.now();
+    if (this._lastViolationTime && (now - this._lastViolationTime < 1500)) {
+      return null;
+    }
+    this._lastViolationTime = now;
+
     const violation = {
       type,
       detail,
-      timestamp: Date.now(),
+      timestamp: now,
       timeLeft: this.state.timerSeconds,
     };
     this.state.violations.push(violation);

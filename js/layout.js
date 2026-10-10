@@ -1,5 +1,3 @@
-<!-- SHARED SIDEBAR TEMPLATE (Guru) - Di-include via JS -->
-<script>
 /**
  * LAYOUT BUILDER - Shared UI Components
  */
@@ -108,4 +106,3 @@ const Layout = {
     if (el) el.innerHTML = html;
   },
 };
-</script>

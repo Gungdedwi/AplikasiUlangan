@@ -140,8 +140,6 @@ function openSoalModal(id = null) {
   document.getElementById('modal-soal-title').textContent = id ? 'Edit Soal' : 'Tambah Soal Baru';
   document.getElementById('modal-soal-body').innerHTML = buildSoalForm(existing);
   document.getElementById('modal-soal').style.display = 'flex';
-  const tipeEl = document.getElementById('soal-tipe');
-  if (tipeEl) tipeEl.dispatchEvent(new Event('change'));
 }
 
 function closeSoalModal() {
@@ -197,7 +195,7 @@ function buildSoalForm(soal) {
       
       <!-- Dynamic answer section -->
       <div id="soal-jawaban-section">
-        ${buildJawabanSection(soal)}
+        ${buildJawabanSection(soal, tipe)}
       </div>
 
       <div class="modal-footer" style="padding:0;border:none;margin-top:16px">
@@ -207,8 +205,8 @@ function buildSoalForm(soal) {
     </form>`;
 }
 
-function buildJawabanSection(soal) {
-  const tipe = document.getElementById('soal-tipe')?.value || soal?.tipe || 'pg';
+function buildJawabanSection(soal, targetTipe) {
+  const tipe = targetTipe || (document.getElementById('soal-tipe')?.value) || soal?.tipe || 'pg';
   
   if (tipe === 'pg') {
     const pilihanArr = soal?.pilihan?.length === 5 ? soal.pilihan : ['','','','',''];

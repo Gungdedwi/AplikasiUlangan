@@ -164,6 +164,8 @@ function renderHasilTable() {
               <td>
                 <div class="td-actions">
                   <button onclick="showDetail('${h.id}')" class="btn btn-sm btn-outline">🔍 Detail</button>
+                  ${h.status === 'ditangguhkan' ?
+                    `<button onclick="bukaPenangguhan('${h.id}')" class="btn btn-sm btn-success" title="Izinkan Siswa Lanjut Ujian">🔓 Verifikasi</button>` : ''}
                   ${h.scoring?.detail && Object.values(h.scoring.detail).some(d => d.status === 'manual') ?
                     `<button onclick="nilaiManual('${h.id}')" class="btn btn-sm btn-warning">📝 Nilai</button>` : ''}
                 </div>
@@ -241,6 +243,162 @@ function showDetail(hasilId) {
 }
 
 function closeDetail() { document.getElementById('modal-detail').style.display = 'none'; }
+
+function showViolations(hasilId) {
+  showDetail(hasilId);
+}
+
+function bukaPenangguhan(hasilId) {
+  const hasil = DB.getHasil().find(h => h.id === hasilId);
+  if (!hasil) return;
+  
+  Utils.confirm('Verifikasi & Buka Penangguhan', `Izinkan ${hasil.siswaName} melanjutkan ujian "${hasil.ujianJudul}"?`, () => {
+    // Restore session ujian
+    DB.saveJawaban(hasil.ujianId, hasil.siswaId, {
+      answers: hasil.answers || {},
+      flagged: [],
+      violations: [], // Reset pelanggaran agar siswa dapat melanjutkan
+      startTime: Date.now() - ((hasil.waktuPengerjaan || 0) * 1000),
+    });
+    
+    // Update status hasil ke berlangsung
+    DB.updateHasil(hasilId, {
+      status: 'berlangsung',
+      submitReason: null,
+    });
+    
+    // Log audit
+    DB.addLog({
+      type: 'VERIFIKASI_GURU',
+      category: 'exam',
+      hasilId: hasil.id,
+      ujianId: hasil.ujianId,
+      actor: session.name,
+      actorId: session.userId,
+      detail: `Guru memverifikasi dan membuka penangguhan ujian untuk ${hasil.siswaName}`,
+      icon: '🔓',
+      severity: 'info',
+    });
+    
+    Utils.toast(`Penangguhan dibuka. Siswa ${hasil.siswaName} dapat melanjutkan ujian.`, 'success');
+    renderHasilTable();
+  }, 'primary');
+}
+
+function nilaiManual(hasilId) {
+  const hasil = DB.getHasil().find(h => h.id === hasilId);
+  if (!hasil) return;
+  const ujian = DB.getUjianById(hasil.ujianId);
+  const soalList = (ujian?.soalIds || []).map(id => DB.getSoalById(id)).filter(s => s && s.tipe === 'uraian');
+  
+  if (soalList.length === 0) {
+    Utils.toast('Tidak ada soal uraian pada ujian ini', 'info');
+    return;
+  }
+
+  const modalBody = `
+    <div style="margin-bottom:16px">
+      <div style="font-weight:700;font-size:16px">${Utils.escapeHtml(hasil.siswaName)}</div>
+      <div style="font-size:13px;color:var(--gray-500)">${Utils.escapeHtml(hasil.ujianJudul)}</div>
+    </div>
+    <form onsubmit="simpanNilaiManual(event, '${hasilId}')">
+      ${soalList.map((s, idx) => {
+        const userAnswer = hasil.answers?.[s.id] || '(Tidak dijawab)';
+        const curScore = hasil.scoring?.detail?.[s.id]?.bobotDapat || 0;
+        return `
+        <div style="background:var(--gray-50);border:1px solid var(--gray-200);border-radius:var(--radius);padding:16px;margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+            <span style="font-weight:700;font-size:13px">Soal Uraian #${idx + 1}</span>
+            <span class="badge badge-primary">Bobot Maks: ${s.bobot || 1}</span>
+          </div>
+          <div style="font-size:14px;color:var(--gray-800);margin-bottom:10px">${Utils.escapeHtml(s.pertanyaan)}</div>
+          <div style="background:white;border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:12px;margin-bottom:10px">
+            <div style="font-size:11px;color:var(--gray-400);font-weight:700;text-transform:uppercase">Jawaban Siswa:</div>
+            <div style="font-size:13px;color:var(--gray-700);margin-top:4px;white-space:pre-wrap">${Utils.escapeHtml(userAnswer)}</div>
+          </div>
+          ${s.jawaban ? `
+          <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:var(--radius-sm);padding:10px;margin-bottom:10px;font-size:12px;color:#166534">
+            <strong>Pedoman Kunci:</strong> ${Utils.escapeHtml(s.jawaban)}
+          </div>` : ''}
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Beri Nilai Bobot (0 - ${s.bobot || 1}):</label>
+            <input type="number" id="manual-score-${s.id}" class="form-control" value="${curScore}" min="0" max="${s.bobot || 1}" step="0.5" style="width:120px" required/>
+          </div>
+        </div>`;
+      }).join('')}
+      <div class="modal-footer" style="padding:0;border:none">
+        <button type="button" onclick="closeDetail()" class="btn btn-secondary">Batal</button>
+        <button type="submit" class="btn btn-primary">💾 Simpan Penilaian</button>
+      </div>
+    </form>
+  `;
+
+  document.getElementById('modal-detail-body').innerHTML = modalBody;
+  document.getElementById('modal-detail').querySelector('.modal-title').textContent = 'Penilaian Soal Uraian';
+  document.getElementById('modal-detail').style.display = 'flex';
+}
+
+function simpanNilaiManual(e, hasilId) {
+  e.preventDefault();
+  const hasil = DB.getHasil().find(h => h.id === hasilId);
+  if (!hasil) return;
+  const ujian = DB.getUjianById(hasil.ujianId);
+  const soalList = (ujian?.soalIds || []).map(id => DB.getSoalById(id)).filter(Boolean);
+
+  let totalBobot = 0;
+  let bobotBenar = 0;
+  const detail = { ...(hasil.scoring?.detail || {}) };
+
+  soalList.forEach(s => {
+    const bobot = s.bobot || 1;
+    totalBobot += bobot;
+    if (s.tipe === 'uraian') {
+      const inputEl = document.getElementById(`manual-score-${s.id}`);
+      const score = inputEl ? Math.min(bobot, Math.max(0, parseFloat(inputEl.value) || 0)) : 0;
+      bobotBenar += score;
+      detail[s.id] = { status: 'graded', bobot, bobotDapat: score, jawaban: hasil.answers?.[s.id], kunci: s.jawaban, benar: score > 0 };
+    } else {
+      const d = detail[s.id];
+      if (d) {
+        bobotBenar += (d.bobotDapat || 0);
+      }
+    }
+  });
+
+  const nilai = totalBobot > 0 ? Math.round((bobotBenar / totalBobot) * 100 * 10) / 10 : 0;
+  const lulus = nilai >= (ujian?.kkm || 75);
+
+  const newScoring = {
+    ...hasil.scoring,
+    nilai,
+    lulus,
+    totalBobot,
+    bobotBenar,
+    detail,
+  };
+
+  DB.updateHasil(hasilId, {
+    nilai,
+    lulus,
+    scoring: newScoring,
+  });
+
+  DB.addLog({
+    type: 'GURU_NILAI_MANUAL',
+    category: 'exam',
+    hasilId: hasil.id,
+    ujianId: hasil.ujianId,
+    actor: session.name,
+    actorId: session.userId,
+    detail: `Menilai soal uraian untuk ${hasil.siswaName}. Nilai baru: ${nilai}`,
+    icon: '📝',
+    severity: 'info',
+  });
+
+  closeDetail();
+  Utils.toast('Nilai uraian berhasil disimpan!', 'success');
+  renderHasilTable();
+}
 
 function exportData() {
   const ujianId = document.getElementById('filter-ujian')?.value || 'semua';
