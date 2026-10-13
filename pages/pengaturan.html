@@ -15,7 +15,7 @@
 <script>
 DB.init();
 Auth.init();
-const session = Layout.initGuru('pengaturan');
+const session = Layout.initStaff('pengaturan', ['admin']);
 try {
   if (session) renderPengaturan();
 } catch (err) {
@@ -152,8 +152,11 @@ function renderPengaturan() {
       <!-- Manajemen Pengguna -->
       <div class="card">
         <div class="card-header">
-          <h3 class="card-title">👥 Manajemen Pengguna</h3>
-          <button onclick="openAddUserModal()" class="btn btn-sm btn-primary">➕ Tambah</button>
+          <div>
+            <h3 class="card-title">👥 Manajemen Pengguna</h3>
+            <div style="font-size:12px;color:var(--gray-500)">Hanya Administrator yang berhak membuat akun baru</div>
+          </div>
+          <button onclick="openAddUserModal()" class="btn btn-sm btn-primary">➕ Tambah Pengguna</button>
         </div>
         <div id="user-list-container"></div>
       </div>
@@ -251,15 +254,31 @@ function renderUserList() {
   
   container.innerHTML = `
   <div style="max-height:400px;overflow-y:auto">
-    ${users.map(u => `
-    <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--gray-100)">
-      <div style="width:32px;height:32px;border-radius:50%;background:${u.role==='guru'?'var(--primary-pale)':'var(--success-light)'};color:${u.role==='guru'?'var(--primary)':'var(--success)'};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">${Utils.getInitials(u.name)}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:600;color:var(--gray-800)">${Utils.escapeHtml(u.name)}</div>
-        <div style="font-size:11px;color:var(--gray-400)">${u.username} • ${u.role === 'guru' ? '👨‍🏫 Guru' : '🎓 '+Utils.escapeHtml(u.kelas||'Siswa')}</div>
-      </div>
-      <button onclick="deleteUser('${u.id}')" class="btn btn-icon btn-sm" style="background:var(--danger-light);color:var(--danger)" title="Hapus">🗑️</button>
-    </div>`).join('')}
+    ${users.map(u => {
+      let roleBadge = '🎓 Siswa';
+      let avatarBg = 'var(--success-light)';
+      let avatarColor = 'var(--success)';
+      if (u.role === 'admin') {
+        roleBadge = '🛡️ Administrator (Pembuat Akun)';
+        avatarBg = 'var(--primary-light)';
+        avatarColor = 'var(--primary-dark)';
+      } else if (u.role === 'guru') {
+        roleBadge = '👨‍🏫 Guru (Pembuat Soal)';
+        avatarBg = 'var(--primary-pale)';
+        avatarColor = 'var(--primary)';
+      } else if (u.kelas) {
+        roleBadge = '🎓 Siswa (' + Utils.escapeHtml(u.kelas) + ')';
+      }
+      return `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--gray-100)">
+        <div style="width:32px;height:32px;border-radius:50%;background:${avatarBg};color:${avatarColor};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">${Utils.getInitials(u.name)}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;color:var(--gray-800)">${Utils.escapeHtml(u.name)}</div>
+          <div style="font-size:11px;color:var(--gray-500)">${u.username} • ${roleBadge}</div>
+        </div>
+        ${u.username !== 'admin' && u.id !== session.userId ? `<button onclick="deleteUser('${u.id}')" class="btn btn-icon btn-sm" style="background:var(--danger-light);color:var(--danger)" title="Hapus">🗑️</button>` : ''}
+      </div>`;
+    }).join('')}
   </div>`;
 }
 
@@ -267,10 +286,11 @@ function openAddUserModal() {
   document.getElementById('add-user-body').innerHTML = `
     <form onsubmit="saveUser(event)" novalidate>
       <div class="form-group">
-        <label class="form-label">Peran <span class="required">*</span></label>
+        <label class="form-label">Peran Akun <span class="required">*</span></label>
         <select id="nu-role" class="form-control" onchange="toggleKelasField()">
-          <option value="siswa">🎓 Siswa</option>
-          <option value="guru">👨‍🏫 Guru</option>
+          <option value="siswa">🎓 Siswa (Peserta Ujian)</option>
+          <option value="guru">👨‍🏫 Guru (Pembuat Soal)</option>
+          <option value="admin">🛡️ Administrator (Akses Penuh & Pembuat Akun)</option>
         </select>
       </div>
       <div class="form-group">
@@ -279,7 +299,7 @@ function openAddUserModal() {
       </div>
       <div class="form-group">
         <label class="form-label">Username <span class="required">*</span></label>
-        <input type="text" id="nu-username" class="form-control" placeholder="Username unik" maxlength="50"/>
+        <input type="text" id="nu-username" class="form-control" placeholder="Username unik (tanpa spasi)" maxlength="50"/>
       </div>
       <div class="form-group">
         <label class="form-label">Password / PIN <span class="required">*</span></label>
@@ -291,7 +311,7 @@ function openAddUserModal() {
       </div>
       <div class="modal-footer" style="padding:0;border:none;margin-top:16px">
         <button type="button" onclick="closeUserModal()" class="btn btn-secondary">Batal</button>
-        <button type="submit" class="btn btn-primary">Simpan</button>
+        <button type="submit" class="btn btn-primary">Simpan Pengguna</button>
       </div>
     </form>`;
   document.getElementById('modal-add-user').style.display = 'flex';
@@ -305,8 +325,12 @@ function toggleKelasField() {
   if (field) field.style.display = role === 'siswa' ? 'block' : 'none';
 }
 
-function saveUser(e) {
+async function saveUser(e) {
   e.preventDefault();
+  if (session.role !== 'admin') {
+    Utils.toast('Hanya Administrator yang memiliki hak membuat akun', 'error');
+    return;
+  }
   const name = Utils.sanitizeInput(document.getElementById('nu-name').value);
   const username = Utils.sanitizeInput(document.getElementById('nu-username').value);
   const password = document.getElementById('nu-password').value;
@@ -319,8 +343,8 @@ function saveUser(e) {
   const existing = DB.getUsers().find(u => u.username === username);
   if (existing) { Utils.toast('Username sudah digunakan', 'error'); return; }
   
-  DB.addUser({ name, username, password, role, kelas, active: true });
-  Utils.toast(`Pengguna ${name} berhasil ditambahkan`, 'success');
+  await DB.addUser({ name, username, password, role, kelas, active: true });
+  Utils.toast(`Akun ${role.toUpperCase()} "${name}" berhasil dibuat`, 'success');
   closeUserModal();
   renderUserList();
 }
