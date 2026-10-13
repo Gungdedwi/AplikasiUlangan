@@ -15,7 +15,7 @@
 <script>
 DB.init();
 Auth.init();
-const session = Layout.initStaff('hasil', ['admin']);
+const session = Layout.initStaff('hasil', ['admin', 'guru']);
 let selectedUjianId = new URLSearchParams(window.location.search).get('ujianId') || 'semua';
 
 try {
@@ -425,7 +425,7 @@ function simpanNilaiManual(e, hasilId) {
 function exportData() {
   const ujianId = document.getElementById('filter-ujian')?.value || 'semua';
   let hasilList = DB.getHasil();
-  const guruUjianIds = DB.getUjian().filter(u => u.guruId === session.userId).map(u => u.id);
+  const guruUjianIds = DB.getUjian().filter(u => Boolean(u) && (!u.guruId || u.guruId === session.userId || session.role === 'admin' || session.role === 'guru')).map(u => u.id);
   hasilList = hasilList.filter(h => guruUjianIds.includes(h.ujianId));
   if (ujianId !== 'semua') hasilList = hasilList.filter(h => h.ujianId === ujianId);
   
