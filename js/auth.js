@@ -110,12 +110,22 @@ const Auth = {
       return { success: false, error: 'Username atau password salah' };
     }
 
-    // 3. Verifikasi Role (Guru vs Siswa)
-    if (expectedRole && authUser.role !== expectedRole) {
-      return {
-        success: false,
-        error: `Akun ini terdaftar sebagai ${authUser.role.toUpperCase()}, bukan ${expectedRole.toUpperCase()}`
-      };
+    // 3. Verifikasi Role (Admin/Guru vs Siswa)
+    if (expectedRole) {
+      const allowedRoles = Array.isArray(expectedRole) ? expectedRole : [expectedRole];
+      if (!allowedRoles.includes(authUser.role)) {
+        if (allowedRoles.includes('siswa')) {
+          return {
+            success: false,
+            error: `Akun ini terdaftar sebagai ${authUser.role === 'admin' ? 'Administrator' : 'Guru'}. Silakan masuk melalui Portal Guru & Administrator.`
+          };
+        } else {
+          return {
+            success: false,
+            error: 'Akun ini terdaftar sebagai Siswa. Silakan masuk melalui Portal Siswa.'
+          };
+        }
+      }
     }
 
     // 4. Buat sesi
@@ -146,6 +156,7 @@ const Auth = {
   // ── Logout ──
   async logout() {
     const session = this.getSession();
+    const isStaff = session && (session.role === 'admin' || session.role === 'guru');
     if (session) {
       await DB.addLog({
         type: 'LOGOUT',
@@ -169,7 +180,11 @@ const Auth = {
     DB.clearSession();
     sessionStorage.removeItem('csrf');
     const isInPages = window.location.pathname.includes('/pages/');
-    window.location.href = isInPages ? '../index.html' : 'index.html';
+    if (isStaff) {
+      window.location.href = isInPages ? 'login-guru.html' : 'pages/login-guru.html';
+    } else {
+      window.location.href = isInPages ? '../index.html' : 'index.html';
+    }
   },
 
   getSession() {
@@ -188,7 +203,8 @@ const Auth = {
   requireRole(role, redirectTo = 'index.html') {
     const session = this.requireAuth(redirectTo);
     if (!session) return null;
-    if (session.role !== role) {
+    const allowed = Array.isArray(role) ? role : [role];
+    if (!allowed.includes(session.role)) {
       window.location.href = redirectTo;
       return null;
     }
@@ -196,20 +212,26 @@ const Auth = {
   },
 
   isLoggedIn() { return !!this.getSession(); },
+  isAdmin() { const s = this.getSession(); return s?.role === 'admin'; },
   isGuru() { const s = this.getSession(); return s?.role === 'guru'; },
-  isSiswa() { const s = this.getSession(); return s?.role === 'siswa'; }
+  isSiswa() { const s = this.getSession(); return s?.role === 'siswa'; },
+  isStaff() { const s = this.getSession(); return s?.role === 'admin' || s?.role === 'guru'; }
 };
 
 // ── Router Module ──
 const Router = {
   PAGES: {
-    guru: {
+    admin: {
       dashboard: 'pages/dashboard-guru.html',
       'bank-soal': 'pages/bank-soal.html',
       'manajemen-ujian': 'pages/manajemen-ujian.html',
       'hasil': 'pages/hasil.html',
       'audit-log': 'pages/audit-log.html',
       'pengaturan': 'pages/pengaturan.html'
+    },
+    guru: {
+      dashboard: 'pages/dashboard-guru.html',
+      'bank-soal': 'pages/bank-soal.html'
     },
     siswa: {
       dashboard: 'pages/dashboard-siswa.html',
