@@ -3,7 +3,12 @@
 -- Jalankan skrip ini di: Supabase Dashboard -> SQL Editor
 -- =====================================================
 
--- ── 1. Tabel: users (Profil Pengguna Guru & Siswa) ──
+-- ── 0. Pembaruan Skema Tabel Eksisting (Migration) ──
+-- Jika tabel public.users sudah pernah dibuat sebelumnya, perbarui batasan check role agar mengizinkan 'admin':
+alter table if exists public.users drop constraint if exists users_role_check;
+alter table if exists public.users add constraint users_role_check check (role in ('admin', 'guru', 'siswa'));
+
+-- ── 1. Tabel: users (Profil Pengguna Admin, Guru & Siswa) ──
 create table if not exists public.users (
   id text primary key default gen_random_uuid()::text,
   username text unique not null,
@@ -135,10 +140,17 @@ drop policy if exists "Anon audit_logs policy" on public.audit_logs;
 create policy "Anon audit_logs policy" on public.audit_logs for all to anon using (true) with check (true);
 
 -- ── 8. Data Awal (Seed Data) ──
+-- Hapus akun demo lama jika masih ada
+delete from public.users where username in ('guru1', 'guru2', 'siswa1', 'siswa2', 'siswa3', 'siswa4');
+
+-- Sisipkan atau perbarui akun Administrator Sistem
 insert into public.users (id, username, password, name, role, email, active)
 values
   ('u-admin-1', 'admin', 'admin123', 'Administrator Sistem', 'admin', 'admin@sekolah.id', true)
-on conflict (username) do nothing;
+on conflict (username) do update set
+  password = excluded.password,
+  role = 'admin',
+  active = true;
 
 insert into public.soal (id, tipe, mapel, kelas, bab, pertanyaan, pilihan, jawaban, bobot, tingkat, pembuat_id)
 values
