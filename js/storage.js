@@ -393,6 +393,11 @@ const DB = {
   },
 
   async addUser(user) {
+    const session = this.getSession();
+    if (session && session.role !== 'admin') {
+      console.warn('Akses ditolak: Hanya Administrator yang berhak membuat akun pengguna.');
+      return null;
+    }
     const users = this.getUsers();
     user.id = user.id || this._uid();
     user.createdAt = Date.now();
@@ -438,6 +443,11 @@ const DB = {
   },
 
   async updateUser(id, data) {
+    const session = this.getSession();
+    if (session && session.role !== 'admin' && session.userId !== id) {
+      console.warn('Akses ditolak: Hanya Administrator yang berhak mengubah akun pengguna lain.');
+      return;
+    }
     const users = this.getUsers().map(u => u.id === id ? { ...u, ...data } : u);
     this.setUsers(users);
 
@@ -451,6 +461,11 @@ const DB = {
   },
 
   async deleteUser(id) {
+    const session = this.getSession();
+    if (session && session.role !== 'admin') {
+      console.warn('Akses ditolak: Hanya Administrator yang berhak menghapus akun pengguna.');
+      return;
+    }
     this.setUsers(this.getUsers().filter(u => u.id !== id));
     if (this.client) {
       try {
@@ -804,22 +819,37 @@ const DB = {
     return code;
   },
 
-  // ── Seed Data Awal (Jika Cloud Kosong / Mode Demo) ──
+  // ── Inisialisasi Akun Administrator & Data Awal ──
   async seed() {
+    // Bersihkan akun demo bawaan agar tidak dapat disusupi
+    const demoUsernames = ['guru1', 'guru2', 'siswa1', 'siswa2', 'siswa3', 'siswa4'];
+    const currentUsers = this.getUsers();
+    const cleanedUsers = currentUsers.filter(u => !demoUsernames.includes(u.username));
+    if (cleanedUsers.length !== currentUsers.length) {
+      this.setUsers(cleanedUsers);
+    }
+
+    // Pastikan akun Administrator utama tersedia untuk mengelola sistem dan membuat akun
+    const usersNow = this.getUsers();
+    const hasAdmin = usersNow.some(u => u.role === 'admin' || u.username === 'admin');
+    let admin = usersNow.find(u => u.role === 'admin');
+    if (!hasAdmin) {
+      admin = {
+        id: 'u-admin-1',
+        username: 'admin',
+        password: 'admin123',
+        name: 'Administrator Sistem',
+        role: 'admin',
+        email: 'admin@sekolah.id',
+        active: true
+      };
+      await this.addUser(admin);
+    }
+
     if (this.get('seeded')) return;
 
-    // Guru default
-    await this.addUser({ id: 'u-guru-1', username: 'guru1', password: 'guru123', name: 'Pak Budi Santoso', role: 'guru', email: 'guru1@sekolah.id', active: true });
-    await this.addUser({ id: 'u-guru-2', username: 'guru2', password: 'guru123', name: 'Bu Sri Wulandari', role: 'guru', email: 'guru2@sekolah.id', active: true });
-
-    // Siswa default
-    await this.addUser({ id: 'u-siswa-1', username: 'siswa1', password: '12345', name: 'Ahmad Fauzi', role: 'siswa', kelas: 'XI IPA 1', no_absen: '01', active: true });
-    await this.addUser({ id: 'u-siswa-2', username: 'siswa2', password: '12345', name: 'Budi Raharjo', role: 'siswa', kelas: 'XI IPA 1', no_absen: '02', active: true });
-    await this.addUser({ id: 'u-siswa-3', username: 'siswa3', password: '12345', name: 'Citra Dewi', role: 'siswa', kelas: 'XI IPA 1', no_absen: '03', active: true });
-    await this.addUser({ id: 'u-siswa-4', username: 'siswa4', password: '12345', name: 'Diana Putri', role: 'siswa', kelas: 'XI IPA 2', no_absen: '01', active: true });
-
-    // Soal default
-    const guru = this.getUsers().find(u => u.role === 'guru') || { id: 'u-guru-1', name: 'Pak Budi Santoso' };
+    // Soal contoh untuk referensi Bank Soal
+    const guru = admin || { id: 'u-admin-1', name: 'Administrator Sistem' };
     const soalData = [
       {
         id: 's-1', tipe: 'pg', mapel: 'Matematika', kelas: 'XI', bab: 'Aljabar',
