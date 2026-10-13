@@ -15,7 +15,7 @@
 <script>
 DB.init();
 Auth.init();
-const session = Layout.initGuru('bank-soal');
+const session = Layout.initStaff('bank-soal', ['guru', 'admin']);
 
 let filterTipe = 'semua';
 let filterMapel = 'semua';
@@ -101,7 +101,7 @@ function renderBankSoal() {
 }
 
 function renderSoalList() {
-  let list = DB.getSoal().filter(s => Boolean(s) && (!s.pembuatId || s.pembuatId === session.userId || session.role === 'guru'));
+  let list = DB.getSoal().filter(s => Boolean(s) && (!s.pembuatId || s.pembuatId === session.userId || session.role === 'guru' || session.role === 'admin'));
   if (filterTipe !== 'semua') list = list.filter(s => s.tipe === filterTipe);
   if (filterMapel !== 'semua') list = list.filter(s => s.mapel === filterMapel);
   if (searchQuery.trim()) {

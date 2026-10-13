@@ -16,7 +16,7 @@
 <script>
 DB.init();
 Auth.init();
-const session = Layout.initGuru('dashboard');
+const session = Layout.initStaff('dashboard', ['guru', 'admin']);
 try {
   if (session) renderDashboard();
 } catch (err) {
@@ -42,9 +42,9 @@ window.addEventListener('supabase-synced', () => {
 function renderDashboard() {
   Layout.setPageTitle('Dashboard');
   
-  const ujianList = DB.getUjian().filter(u => Boolean(u) && (!u.guruId || u.guruId === session.userId || session.role === 'guru'));
+  const ujianList = DB.getUjian().filter(u => Boolean(u) && (!u.guruId || u.guruId === session.userId || session.role === 'admin' || session.role === 'guru'));
   const hasilList = DB.getHasil();
-  const soalList = DB.getSoal().filter(s => Boolean(s) && (!s.pembuatId || s.pembuatId === session.userId || session.role === 'guru'));
+  const soalList = DB.getSoal().filter(s => Boolean(s) && (!s.pembuatId || s.pembuatId === session.userId || session.role === 'admin' || session.role === 'guru'));
   const logs = DB.getLogs();
   const siswaCount = DB.getUsers().filter(u => u.role === 'siswa').length;
   
@@ -64,9 +64,13 @@ function renderDashboard() {
         <h1 class="page-title">Dashboard</h1>
         <p class="page-subtitle">Selamat datang kembali, ${Utils.escapeHtml(session.name)}! 👋</p>
       </div>
+      ${session.role === 'admin' ? `
       <a href="manajemen-ujian.html" class="btn btn-primary">
         ➕ Buat Ujian Baru
-      </a>
+      </a>` : `
+      <a href="bank-soal.html" class="btn btn-primary">
+        ➕ Buat Soal Baru
+      </a>`}
     </div>
 
     <!-- Stats Grid -->
