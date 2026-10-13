@@ -319,7 +319,21 @@ const DB = {
       ]);
 
       if (uRes.data && uRes.data.length > 0) {
-        this.set('users', uRes.data.map(u => this._toCamelUser(u)));
+        const cloudUsers = uRes.data.map(u => this._toCamelUser(u));
+        const hasAdminInCloud = cloudUsers.some(u => u.role === 'admin' || u.username === 'admin');
+        if (!hasAdminInCloud) {
+          const currentAdmin = this.getUsers().find(u => u.role === 'admin' || u.username === 'admin') || {
+            id: 'u-admin-1',
+            username: 'admin',
+            password: 'admin123',
+            name: 'Administrator Sistem',
+            role: 'admin',
+            email: 'admin@sekolah.id',
+            active: true
+          };
+          cloudUsers.push(currentAdmin);
+        }
+        this.set('users', cloudUsers);
       }
       if (sRes.data && sRes.data.length > 0) {
         this.set('soal', sRes.data.map(s => this._toCamelSoal(s)));
@@ -429,7 +443,28 @@ const DB = {
         console.warn('Supabase findUser query failed, fallback to cache:', e);
       }
     }
-    return this.getUsers().find(u => u.username === username && u.password === password && u.active !== false);
+    const localUser = this.getUsers().find(u => u.username === username && u.password === password && u.active !== false);
+    if (localUser) return localUser;
+
+    // Failsafe darurat akun default Administrator jika skema Supabase cloud belum diperbarui
+    if (username === 'admin' && password === 'admin123') {
+      const defaultAdmin = {
+        id: 'u-admin-1',
+        username: 'admin',
+        password: 'admin123',
+        name: 'Administrator Sistem',
+        role: 'admin',
+        email: 'admin@sekolah.id',
+        active: true
+      };
+      const users = this.getUsers();
+      if (!users.some(u => u.username === 'admin')) {
+        users.push(defaultAdmin);
+        this.setUsers(users);
+      }
+      return defaultAdmin;
+    }
+    return null;
   },
 
   async findUserById(id) {
