@@ -15,7 +15,7 @@
 <script>
 DB.init();
 Auth.init();
-const session = Layout.initStaff('manajemen-ujian', ['admin']);
+const session = Layout.initStaff('manajemen-ujian', ['admin', 'guru']);
 let editingUjianId = null;
 
 try {
@@ -184,7 +184,7 @@ function renderUjianList() {
 function openUjianModal(id = null) {
   editingUjianId = id;
   const ujian = id ? DB.getUjianById(id) : null;
-  const soalList = DB.getSoal().filter(s => s.pembuatId === session.userId);
+  const soalList = DB.getSoal().filter(s => Boolean(s) && (!s.pembuatId || s.pembuatId === session.userId || session.role === 'admin' || session.role === 'guru'));
   document.getElementById('modal-ujian-title').textContent = id ? 'Edit Ujian' : 'Buat Ujian Baru';
   document.getElementById('modal-ujian-body').innerHTML = buildUjianForm(ujian, soalList);
   document.getElementById('modal-ujian').style.display = 'flex';
