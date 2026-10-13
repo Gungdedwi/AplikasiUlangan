@@ -12,9 +12,12 @@ const Layout = {
   ],
 
   GURU_MENU: [
-    { section: 'Pembuatan Soal' },
+    { section: 'Utama' },
+    { id: 'dashboard', icon: '🏠', label: 'Dashboard', href: 'dashboard-guru.html' },
+    { id: 'manajemen-ujian', icon: '📋', label: 'Manajemen Ujian', href: 'manajemen-ujian.html' },
     { id: 'bank-soal', icon: '📚', label: 'Bank Soal', href: 'bank-soal.html' },
-    { id: 'dashboard', icon: '🏠', label: 'Dashboard Guru', href: 'dashboard-guru.html' },
+    { section: 'Laporan' },
+    { id: 'hasil', icon: '📊', label: 'Hasil & Nilai', href: 'hasil.html' },
   ],
 
   initStaff(activeId, allowedRoles = ['guru', 'admin']) {
@@ -24,7 +27,7 @@ const Layout = {
     const allowed = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
     if (!allowed.includes(session.role)) {
       if (session.role === 'guru') {
-        window.location.href = 'bank-soal.html';
+        window.location.href = 'dashboard-guru.html';
         return null;
       }
       if (session.role === 'siswa') {
@@ -47,7 +50,7 @@ const Layout = {
     const stats = this._getGuruStats(session);
     const isAdmin = session.role === 'admin';
     const menuList = isAdmin ? this.ADMIN_MENU : this.GURU_MENU;
-    const roleLabel = isAdmin ? 'Administrator' : 'Guru (Pembuat Soal)';
+    const roleLabel = isAdmin ? 'Administrator' : 'Guru / Pendidik';
 
     document.body.innerHTML = `
       <div id="toast-container"></div>

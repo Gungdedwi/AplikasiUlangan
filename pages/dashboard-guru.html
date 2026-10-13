@@ -64,13 +64,14 @@ function renderDashboard() {
         <h1 class="page-title">Dashboard</h1>
         <p class="page-subtitle">Selamat datang kembali, ${Utils.escapeHtml(session.name)}! 👋</p>
       </div>
-      ${session.role === 'admin' ? `
-      <a href="manajemen-ujian.html" class="btn btn-primary">
-        ➕ Buat Ujian Baru
-      </a>` : `
-      <a href="bank-soal.html" class="btn btn-primary">
-        ➕ Buat Soal Baru
-      </a>`}
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a href="bank-soal.html" class="btn btn-outline">
+          📚 Bank Soal
+        </a>
+        <a href="manajemen-ujian.html" class="btn btn-primary">
+          ➕ Buat Ujian Baru
+        </a>
+      </div>
     </div>
 
     <!-- Stats Grid -->
