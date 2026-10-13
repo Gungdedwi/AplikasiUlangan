@@ -8,10 +8,12 @@
 </head>
 <body>
 <div id="toast-container"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../js/storage.js"></script>
 <script src="../js/utils.js"></script>
 <script src="../js/auth.js"></script>
 <script>
+DB.init();
 Auth.init();
 const session = Auth.requireRole('siswa', '../index.html');
 if (!session) throw new Error('Unauthorized');
@@ -132,9 +134,12 @@ function getKode() {
   return [0,1,2,3,4,5].map(i => (document.getElementById(`code-${i}`)?.value||'').toUpperCase()).join('');
 }
 
-function checkAutoPreview(kode) {
+async function checkAutoPreview(kode) {
   if (kode.length !== 6) return;
-  const ujian = DB.getUjianByKode(kode);
+  let ujian = DB.getUjianByKode(kode);
+  if (!ujian && DB.client) {
+    ujian = await DB.getUjianByKode(kode);
+  }
   if (!ujian) return;
   showUjianPreview(ujian);
 }
@@ -195,7 +200,7 @@ function showUjianPreview(ujian) {
   preview.style.display = 'block';
 }
 
-function cariUjian(e) {
+async function cariUjian(e) {
   e.preventDefault();
   const kode = getKode();
   document.getElementById('kode-error').style.display = 'none';
@@ -206,7 +211,10 @@ function cariUjian(e) {
     return;
   }
   
-  const ujian = DB.getUjianByKode(kode);
+  let ujian = DB.getUjianByKode(kode);
+  if (!ujian && DB.client) {
+    ujian = await DB.getUjianByKode(kode);
+  }
   if (!ujian) {
     document.getElementById('kode-error').style.display = 'flex';
     document.getElementById('kode-error-msg').textContent = 'Kode ujian tidak ditemukan. Periksa kembali kode Anda.';

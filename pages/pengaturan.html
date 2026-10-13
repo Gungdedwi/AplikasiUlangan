@@ -7,11 +7,13 @@
   <link rel="stylesheet" href="../css/style.css"/>
 </head>
 <body>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../js/storage.js"></script>
 <script src="../js/utils.js"></script>
 <script src="../js/auth.js"></script>
 <script src="../js/layout.js"></script>
 <script>
+DB.init();
 Auth.init();
 const session = Layout.initGuru('pengaturan');
 try {
@@ -33,7 +35,45 @@ function renderPengaturan() {
   <div class="animate-fade-in">
     <div class="mb-6">
       <h1 class="page-title">Pengaturan</h1>
-      <p class="page-subtitle">Konfigurasi sistem dan Exam Mode</p>
+      <p class="page-subtitle">Konfigurasi sistem, database cloud, dan Exam Mode</p>
+    </div>
+
+    <!-- Integrasi Supabase Cloud -->
+    <div class="card mb-6" style="border: 1.5px solid var(--primary-light); background: linear-gradient(to right, #F8FAFC, #EFF6FF)">
+      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:24px">☁️</span>
+          <div>
+            <h3 class="card-title" style="margin:0">Integrasi Database Cloud (Supabase)</h3>
+            <div style="font-size:12px;color:var(--gray-500)">Sinkronisasi Bank Soal, Autosave Jawaban, Auth Guru & Siswa, serta Audit Log di Cloud</div>
+          </div>
+        </div>
+        <div id="supabase-status-badge">
+          ${DB.isConnected
+            ? '<span class="badge badge-success" style="font-size:12px;padding:6px 12px">🟢 Terhubung ke Cloud</span>'
+            : '<span class="badge badge-warning" style="font-size:12px;padding:6px 12px">🟡 Mode Lokal / Belum Diatur</span>'}
+        </div>
+      </div>
+      <div style="padding:16px 0 0 0">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" class="mb-4">
+          <div>
+            <label class="form-label" style="font-weight:600">Supabase Project URL <span class="required">*</span></label>
+            <input type="text" id="sb-url" class="form-control" placeholder="https://xyzcompany.supabase.co" value="${Utils.escapeHtml(DB.getSupabaseConfig().url || '')}" />
+            <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Didapatkan dari Supabase Dashboard ➔ Project Settings ➔ API</div>
+          </div>
+          <div>
+            <label class="form-label" style="font-weight:600">Supabase Anon Public Key <span class="required">*</span></label>
+            <input type="password" id="sb-key" class="form-control" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..." value="${Utils.escapeHtml(DB.getSupabaseConfig().anonKey || '')}" />
+            <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Kunci anon / public client (Aman digunakan di browser)</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <button onclick="saveSupabaseConfig()" class="btn btn-primary btn-sm">💾 Simpan & Hubungkan</button>
+          <button onclick="testSupabaseConn()" class="btn btn-outline btn-sm">🔄 Uji Koneksi</button>
+          <button onclick="syncSupabaseData()" class="btn btn-secondary btn-sm">☁️ Tarik Data Terbaru</button>
+          <button onclick="showSqlModal()" class="btn btn-ghost btn-sm" style="color:var(--primary)">📋 Lihat Skrip SQL DDL</button>
+        </div>
+      </div>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
@@ -148,6 +188,26 @@ function renderPengaturan() {
           <button class="modal-close" onclick="closeUserModal()">✕</button>
         </div>
         <div class="modal-body" id="add-user-body"></div>
+      </div>
+    </div>
+
+    <!-- Modal SQL DDL -->
+    <div id="modal-sql" class="modal-backdrop" style="display:none">
+      <div class="modal modal-lg">
+        <div class="modal-header">
+          <h3 class="modal-title">📋 Skrip SQL DDL Supabase</h3>
+          <button class="modal-close" onclick="closeSqlModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <p style="font-size:13px;color:var(--gray-600);margin-bottom:12px">
+            Salin skrip SQL ini lalu jalankan di: <strong>Supabase Dashboard ➔ SQL Editor ➔ New Query ➔ Run</strong>.
+          </p>
+          <textarea id="sql-ddl-text" class="form-control" style="height:280px;font-family:monospace;font-size:12px;background:#0F172A;color:#E2E8F0;padding:12px" readonly></textarea>
+          <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:12px">
+            <button type="button" onclick="copySqlDDL()" class="btn btn-primary btn-sm">📋 Salin Skrip SQL</button>
+            <button type="button" onclick="closeSqlModal()" class="btn btn-secondary btn-sm">Tutup</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>`;
@@ -305,8 +365,67 @@ function exportAllData() {
   Utils.toast('Backup berhasil didownload', 'success');
 }
 
+function saveSupabaseConfig() {
+  const url = document.getElementById('sb-url').value.trim();
+  const anonKey = document.getElementById('sb-key').value.trim();
+  if (!url || !anonKey) {
+    Utils.toast('URL dan Anon Key wajib diisi', 'error');
+    return;
+  }
+  DB.setSupabaseConfig({ url, anonKey });
+  Utils.toast('Konfigurasi Supabase disimpan! Menguji koneksi...', 'info');
+  testSupabaseConn();
+}
+
+async function testSupabaseConn() {
+  const res = await DB.testConnection();
+  const badge = document.getElementById('supabase-status-badge');
+  if (res.success) {
+    Utils.toast('✅ Berhasil terhubung ke Supabase Cloud!', 'success');
+    if (badge) badge.innerHTML = '<span class="badge badge-success" style="font-size:12px;padding:6px 12px">🟢 Terhubung ke Cloud</span>';
+  } else {
+    Utils.toast('❌ Koneksi gagal: ' + (res.error || 'Periksa URL dan Anon Key'), 'error');
+    if (badge) badge.innerHTML = '<span class="badge badge-danger" style="font-size:12px;padding:6px 12px">🔴 Gagal Terhubung</span>';
+  }
+}
+
+async function syncSupabaseData() {
+  Utils.toast('☁️ Menyinkronkan data dari cloud...', 'info');
+  const ok = await DB.syncFromSupabase();
+  if (ok) {
+    Utils.toast('✅ Data berhasil disinkronkan!', 'success');
+    renderPengaturan();
+  } else {
+    Utils.toast('Gagal menyinkronkan data cloud', 'error');
+  }
+}
+
+async function showSqlModal() {
+  try {
+    const res = await fetch('../supabase_schema.sql');
+    const sql = await res.text();
+    document.getElementById('sql-ddl-text').value = sql;
+  } catch (e) {
+    document.getElementById('sql-ddl-text').value = '-- File supabase_schema.sql tersedia di direktori proyek.';
+  }
+  document.getElementById('modal-sql').style.display = 'flex';
+}
+
+function closeSqlModal() {
+  document.getElementById('modal-sql').style.display = 'none';
+}
+
+function copySqlDDL() {
+  const ta = document.getElementById('sql-ddl-text');
+  ta.select();
+  navigator.clipboard.writeText(ta.value).then(() => {
+    Utils.toast('Skrip SQL berhasil disalin ke clipboard!', 'success');
+  });
+}
+
 document.addEventListener('click', e => {
   if (e.target === document.getElementById('modal-add-user')) closeUserModal();
+  if (e.target === document.getElementById('modal-sql')) closeSqlModal();
 });
 </script>
 </body>

@@ -62,3 +62,14 @@ Bertindaklah sebagai **SOFTWARE DEVELOPER PROFESIONAL**, **UI/UX DESIGNER**, **A
 8. Tambahkan autosave, timer server, pengiriman otomatis, hasil nilai, dan audit log.
 9. Untuk penguncian lebih kuat, jalankan perangkat siswa dalam kiosk/managed-device mode.
 10. Deploy ke hosting agar dapat diakses via HP, tablet, atau komputer.
+
+---
+
+## 📌 ADDENDUM UTAMA (WAJIB DIIKUTI)
+
+Karena aplikasi ini 100% menggunakan arsitektur Frontend (HTML, CSS, Vanilla JS) dan akan di-host di GitHub Pages/Vercel, maka untuk fitur "Login Guru & Siswa", "Penyimpanan Bank Soal", "Autosave Jawaban", dan "Audit Log Pelanggaran", KAMU WAJIB MENGGUNAKAN SUPABASE (menggunakan Supabase JS Client via CDN).
+
+Tolong implementasikan:
+1. `js/auth.js`: Harus menggunakan Supabase Auth (untuk membedakan role guru dan siswa).
+2. `js/storage.js`: Jangan gunakan localStorage untuk data utama. Gunakan query Supabase (`select`, `insert`, `update`) untuk memuat soal ke `ujian.html` dan mengirim hasil ujian dari `selesai.html` ke database cloud agar bisa dibaca oleh `dashboard-guru.html` dan `hasil.html`.
+3. Berikan instruksi tabel apa saja (SQL DDL) yang harus saya buat di dashboard Supabase agar kode JS yang kamu buat ini singkron.

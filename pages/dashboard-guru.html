@@ -8,11 +8,13 @@
   <link rel="stylesheet" href="../css/style.css"/>
 </head>
 <body>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../js/storage.js"></script>
 <script src="../js/utils.js"></script>
 <script src="../js/auth.js"></script>
 <script src="../js/layout.js"></script>
 <script>
+DB.init();
 Auth.init();
 const session = Layout.initGuru('dashboard');
 try {
@@ -26,6 +28,16 @@ try {
     </div>
   `);
 }
+
+// Sinkronkan data hasil ujian terbaru dari Supabase Cloud
+if (DB.client) {
+  DB.syncFromSupabase().then(() => {
+    if (session) renderDashboard();
+  });
+}
+window.addEventListener('supabase-synced', () => {
+  if (session) renderDashboard();
+});
 
 function renderDashboard() {
   Layout.setPageTitle('Dashboard');

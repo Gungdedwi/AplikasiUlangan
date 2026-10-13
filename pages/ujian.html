@@ -91,11 +91,13 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../js/storage.js"></script>
 <script src="../js/utils.js"></script>
 <script src="../js/auth.js"></script>
 <script src="../js/exam.js"></script>
 <script>
+DB.init();
 Auth.init();
 const session = Auth.requireRole('siswa', '../index.html');
 if (!session) throw new Error('Unauthorized');
@@ -103,71 +105,9 @@ if (!session) throw new Error('Unauthorized');
 const ujianId = new URLSearchParams(window.location.search).get('ujianId');
 if (!ujianId) { window.location.href = 'dashboard-siswa.html'; throw new Error('No ujianId'); }
 
-const ujian = DB.getUjianById(ujianId);
-if (!ujian) { window.location.href = 'dashboard-siswa.html'; throw new Error('Ujian not found'); }
-
-// Cek apakah sudah selesai
-const existingHasil = DB.getHasilBySiswaUjian(session.userId, ujianId);
-if (existingHasil && existingHasil.status === 'selesai') {
-  window.location.href = `selesai.html?hasilId=${existingHasil.id}`;
-}
-if (existingHasil && existingHasil.status === 'ditangguhkan') {
-  window.location.href = 'dashboard-siswa.html';
-}
-
 // State UI
 let hasilData = null;
-
-// Build UI
-document.body.insertAdjacentHTML('beforeend', `
-<div class="exam-page" id="exam-page">
-  <!-- Topbar -->
-  <div class="exam-topbar">
-    <div style="display:flex;align-items:center;gap:12px">
-      <button onclick="toggleMobileNav()" style="background:none;border:none;color:white;font-size:20px;cursor:pointer;display:none" id="btn-mobile-nav">☰</button>
-      <div>
-        <div class="exam-title">${Utils.escapeHtml(ujian.judul)}</div>
-        <div style="font-size:11px;opacity:0.7">${Utils.escapeHtml(session.name)} • ${Utils.escapeHtml(ujian.mapel||'-')}</div>
-      </div>
-    </div>
-    <div style="display:flex;align-items:center;gap:12px">
-      <!-- Autosave indicator -->
-      <div id="autosave-indicator" style="font-size:12px;opacity:0.6;display:none">💾 Tersimpan</div>
-      <!-- Timer -->
-      <div class="exam-timer" id="exam-timer">
-        <span>⏱️</span>
-        <span id="timer-display">--:--</span>
-      </div>
-    </div>
-  </div>
-
-  <div class="exam-body">
-    <!-- Sidebar navigasi soal -->
-    <div class="exam-sidebar" id="exam-sidebar">
-      <div style="padding:12px 0;border-bottom:1px solid var(--gray-200);margin-bottom:12px">
-        <div style="font-size:12px;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:0.5px">Navigasi Soal</div>
-        <div style="font-size:11px;color:var(--gray-400);margin-top:4px" id="answered-progress">0 / 0 dijawab</div>
-      </div>
-      <div class="question-nav-grid" id="question-nav"></div>
-      <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--gray-200)">
-        <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--gray-500);margin-bottom:4px"><span style="width:14px;height:14px;background:var(--success);border-radius:3px;display:inline-block"></span>Dijawab</div>
-        <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--gray-500);margin-bottom:4px"><span style="width:14px;height:14px;background:var(--primary);border-radius:3px;display:inline-block"></span>Saat ini</div>
-        <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--gray-500)"><span style="width:14px;height:14px;background:var(--warning);border-radius:3px;display:inline-block"></span>Ditandai</div>
-      </div>
-      <div style="margin-top:16px">
-        <button onclick="showSubmitConfirm()" class="btn btn-danger btn-full btn-sm">📬 Kirim Ujian</button>
-      </div>
-    </div>
-
-    <!-- Main exam area -->
-    <div class="exam-main" id="exam-main-area">
-      <div style="display:flex;align-items:center;justify-content:center;height:200px">
-        <div class="spinner"></div>
-      </div>
-    </div>
-  </div>
-</div>`);
-
+let ujian = null;
 let violationDetectionStarted = false;
 
 function activateExamMode() {
@@ -187,8 +127,79 @@ async function masukLayarPenuh() {
   activateExamMode();
 }
 
-// INIT EXAM ENGINE
+// INIT EXAM ENGINE & UI
 (async () => {
+  ujian = DB.getUjianById(ujianId);
+  if (!ujian && DB.client) {
+    ujian = await DB.getUjianById(ujianId);
+  }
+  if (!ujian) {
+    alert('Ujian tidak ditemukan atau belum aktif');
+    window.location.href = 'dashboard-siswa.html';
+    return;
+  }
+
+  // Cek apakah sudah selesai
+  const existingHasil = DB.getHasilBySiswaUjian(session.userId, ujianId);
+  if (existingHasil && existingHasil.status === 'selesai') {
+    window.location.href = `selesai.html?hasilId=${existingHasil.id}`;
+    return;
+  }
+  if (existingHasil && existingHasil.status === 'ditangguhkan') {
+    window.location.href = 'dashboard-siswa.html';
+    return;
+  }
+
+  // Build UI
+  document.body.insertAdjacentHTML('beforeend', `
+  <div class="exam-page" id="exam-page">
+    <!-- Topbar -->
+    <div class="exam-topbar">
+      <div style="display:flex;align-items:center;gap:12px">
+        <button onclick="toggleMobileNav()" style="background:none;border:none;color:white;font-size:20px;cursor:pointer;display:none" id="btn-mobile-nav">☰</button>
+        <div>
+          <div class="exam-title">${Utils.escapeHtml(ujian.judul)}</div>
+          <div style="font-size:11px;opacity:0.7">${Utils.escapeHtml(session.name)} • ${Utils.escapeHtml(ujian.mapel||'-')}</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <!-- Autosave indicator -->
+        <div id="autosave-indicator" style="font-size:12px;opacity:0.8;display:none">☁️ Tersimpan di Cloud</div>
+        <!-- Timer -->
+        <div class="exam-timer" id="exam-timer">
+          <span>⏱️</span>
+          <span id="timer-display">--:--</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="exam-body">
+      <!-- Sidebar navigasi soal -->
+      <div class="exam-sidebar" id="exam-sidebar">
+        <div style="padding:12px 0;border-bottom:1px solid var(--gray-200);margin-bottom:12px">
+          <div style="font-size:12px;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:0.5px">Navigasi Soal</div>
+          <div style="font-size:11px;color:var(--gray-400);margin-top:4px" id="answered-progress">0 / 0 dijawab</div>
+        </div>
+        <div class="question-nav-grid" id="question-nav"></div>
+        <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--gray-200)">
+          <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--gray-500);margin-bottom:4px"><span style="width:14px;height:14px;background:var(--success);border-radius:3px;display:inline-block"></span>Dijawab</div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--gray-500);margin-bottom:4px"><span style="width:14px;height:14px;background:var(--primary);border-radius:3px;display:inline-block"></span>Saat ini</div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--gray-500)"><span style="width:14px;height:14px;background:var(--warning);border-radius:3px;display:inline-block"></span>Ditandai</div>
+        </div>
+        <div style="margin-top:16px">
+          <button onclick="showSubmitConfirm()" class="btn btn-danger btn-full btn-sm">📬 Kirim Ujian</button>
+        </div>
+      </div>
+
+      <!-- Main exam area -->
+      <div class="exam-main" id="exam-main-area">
+        <div style="display:flex;align-items:center;justify-content:center;height:200px">
+          <div class="spinner"></div>
+        </div>
+      </div>
+    </div>
+  </div>`);
+
   hasilData = await ExamEngine.init(ujian, session);
   renderCurrentQuestion();
   renderQuestionNav();
@@ -536,15 +547,16 @@ function konfirmasiSubmit() {
   submitUjian('manual');
 }
 
-function submitUjian(reason) {
+async function submitUjian(reason) {
   document.getElementById('submit-confirm-overlay').style.display = 'none';
   ExamEngine.cleanup();
-  const result = ExamEngine.submit(reason);
+  Utils.toast('☁️ Menyimpan hasil ke database cloud...', 'info', 1500);
+  const result = await ExamEngine.submit(reason);
   if (result) {
     Utils.toast('✅ Ujian berhasil dikumpulkan!', 'success', 2000);
     setTimeout(() => {
       window.location.href = `selesai.html?hasilId=${result.hasilId}`;
-    }, 1500);
+    }, 1200);
   }
 }
 </script>

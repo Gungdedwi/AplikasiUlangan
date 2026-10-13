@@ -8,10 +8,12 @@
 </head>
 <body>
 <div id="toast-container"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../js/storage.js"></script>
 <script src="../js/utils.js"></script>
 <script src="../js/auth.js"></script>
 <script>
+DB.init();
 Auth.init();
 const session = Auth.requireRole('siswa', '../index.html');
 if (!session) throw new Error('Unauthorized');
@@ -19,18 +21,28 @@ if (!session) throw new Error('Unauthorized');
 const ujianId = new URLSearchParams(window.location.search).get('ujianId');
 if (!ujianId) { window.location.href = 'dashboard-siswa.html'; throw new Error('No ujianId'); }
 
-const ujian = DB.getUjianById(ujianId);
-if (!ujian) { alert('Ujian tidak ditemukan'); window.location.href = 'dashboard-siswa.html'; throw new Error('Ujian not found'); }
-
-// Cek apakah sudah selesai
-const existingHasil = DB.getHasilBySiswaUjian(session.userId, ujianId);
-if (existingHasil && existingHasil.status === 'selesai') {
-  window.location.href = `selesai.html?hasilId=${existingHasil.id}`;
-}
-
+let ujian = null;
 let countdownInterval;
 
-document.body.innerHTML = `
+(async () => {
+  ujian = DB.getUjianById(ujianId);
+  if (!ujian && DB.client) {
+    ujian = await DB.getUjianById(ujianId);
+  }
+  if (!ujian) {
+    alert('Ujian tidak ditemukan atau belum aktif');
+    window.location.href = 'dashboard-siswa.html';
+    return;
+  }
+
+  // Cek apakah sudah selesai
+  const existingHasil = DB.getHasilBySiswaUjian(session.userId, ujianId);
+  if (existingHasil && existingHasil.status === 'selesai') {
+    window.location.href = `selesai.html?hasilId=${existingHasil.id}`;
+    return;
+  }
+
+  document.body.innerHTML = `
 <div class="instruction-page">
   <div class="instruction-card animate-fade-in-up">
     <div class="instruction-header">
@@ -108,6 +120,7 @@ document.body.innerHTML = `
     </div>
   </div>
 </div>`;
+})();
 
 function toggleStartBtn() {
   const checked = document.getElementById('confirm-rules').checked;

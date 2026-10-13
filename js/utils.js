@@ -1,7 +1,3 @@
-/**
- * UTILITY FUNCTIONS
- * Helper functions untuk seluruh aplikasi
- */
 const Utils = {
   // === FORMAT ===
   formatTime(seconds) {

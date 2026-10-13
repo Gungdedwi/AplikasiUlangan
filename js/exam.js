@@ -1,7 +1,3 @@
-/**
- * EXAM ENGINE - Kiosk/Exam Mode
- * Mengelola mode ujian: fullscreen, deteksi pelanggaran, timer, autosave
- */
 const ExamEngine = {
   state: {
     ujian: null,
@@ -23,7 +19,7 @@ const ExamEngine = {
     violationOverlayShown: false,
   },
 
-  // === INIT ===
+  // ── Inisialisasi Ujian & Restore Cloud Jawaban ──
   async init(ujian, siswa) {
     const settings = DB.getSettings();
     this.state.ujian = ujian;
@@ -32,43 +28,55 @@ const ExamEngine = {
     this.state.timerSeconds = (ujian.durasi || 90) * 60;
     this.state.startTime = Date.now();
 
-    // Ambil / restore jawaban yang tersimpan
-    const savedJawaban = DB.getJawaban(ujian.id, siswa.userId);
+    // Ambil jawaban yang tersimpan (prioritaskan Supabase cloud jika terhubung)
+    let savedJawaban = DB.getJawaban(ujian.id, siswa.userId);
+    if (DB.client) {
+      const cloudJawaban = await DB.fetchJawaban(ujian.id, siswa.userId);
+      if (cloudJawaban && cloudJawaban.answers && Object.keys(cloudJawaban.answers).length > 0) {
+        savedJawaban = cloudJawaban;
+      }
+    }
+
     this.state.answers = savedJawaban.answers || {};
     this.state.flagged = savedJawaban.flagged || [];
     this.state.violations = savedJawaban.violations || [];
     this.state.violationCount = this.state.violations.length;
 
     if (savedJawaban.startTime) {
-      // Hitung sisa waktu dari startTime yang tersimpan
       const elapsed = Math.floor((Date.now() - savedJawaban.startTime) / 1000);
       this.state.timerSeconds = Math.max(0, this.state.timerSeconds - elapsed);
       this.state.startTime = savedJawaban.startTime;
     }
 
-    // Persiapkan soal
-    let soalList = ujian.soalIds.map(id => DB.getSoalById(id)).filter(Boolean);
-    if (ujian.acakSoal) soalList = Utils.shuffle(soalList);
-    if (ujian.jumlahSoal && soalList.length > ujian.jumlahSoal) soalList = soalList.slice(0, ujian.jumlahSoal);
+    // Persiapkan soal (dari cache atau Supabase cloud)
+    const soalIds = ujian.soalIds || ujian.soal_ids || [];
+    let soalList = soalIds.map(id => DB.getSoalById(id)).filter(Boolean);
+    if (soalList.length === 0 && DB.client) {
+      await DB.fetchSoal();
+      soalList = soalIds.map(id => DB.getSoalById(id)).filter(Boolean);
+    }
+    if (ujian.acakSoal !== false && ujian.acak_soal !== false) soalList = Utils.shuffle(soalList);
+    const maxSoal = ujian.jumlahSoal || ujian.jumlah_soal;
+    if (maxSoal && soalList.length > maxSoal) soalList = soalList.slice(0, maxSoal);
     this.state.soalList = soalList;
 
-    // Buat atau ambil record hasil
+    // Buat atau ambil record hasil dari Supabase/Cache
     let hasil = DB.getHasilBySiswaUjian(siswa.userId, ujian.id);
     if (!hasil) {
-      hasil = DB.addHasil({
+      hasil = await DB.addHasil({
         siswaId: siswa.userId,
         siswaName: siswa.name,
         ujianId: ujian.id,
         ujianJudul: ujian.judul,
-        guruId: ujian.guruId,
+        guruId: ujian.guruId || ujian.guru_id || null,
         status: 'berlangsung',
         nilai: null,
       });
     }
     this.state.hasilId = hasil.id;
 
-    // Log mulai ujian
-    DB.addLog({
+    // Log mulai ujian ke cloud
+    await DB.addLog({
       type: 'MULAI_UJIAN',
       category: 'exam',
       hasilId: hasil.id,
@@ -80,13 +88,13 @@ const ExamEngine = {
       severity: 'info',
     });
 
-    // Simpan jawaban awal dengan startTime
-    this._autosave();
+    // Simpan jawaban awal
+    await this._autosave();
 
     return hasil;
   },
 
-  // === TIMER ===
+  // ── Timer Pengatur Waktu Ujian ──
   startTimer(onTick, onEnd) {
     this.stopTimer();
     this.state.timerInterval = setInterval(() => {
@@ -107,7 +115,7 @@ const ExamEngine = {
     }
   },
 
-  // === AUTOSAVE ===
+  // ── Autosave Jawaban ke Supabase Cloud ──
   startAutosave(intervalSeconds = 30) {
     this.stopAutosave();
     this.state.autosaveInterval = setInterval(() => {
@@ -122,17 +130,30 @@ const ExamEngine = {
     }
   },
 
-  _autosave() {
+  async _autosave() {
     if (!this.state.ujian || !this.state.siswa) return;
-    DB.saveJawaban(this.state.ujian.id, this.state.siswa.userId, {
+    const indicator = document.getElementById('autosave-indicator');
+    if (indicator) {
+      indicator.style.display = 'block';
+      indicator.textContent = '☁️ Menyimpan...';
+    }
+
+    await DB.saveJawaban(this.state.ujian.id, this.state.siswa.userId, {
       answers: this.state.answers,
       flagged: this.state.flagged,
       violations: this.state.violations,
       startTime: this.state.startTime,
     });
+
+    if (indicator) {
+      indicator.textContent = '☁️ Tersimpan di Cloud';
+      setTimeout(() => {
+        if (indicator) indicator.style.display = 'none';
+      }, 2000);
+    }
   },
 
-  // === JAWABAN ===
+  // ── Manipulasi Jawaban ──
   setAnswer(soalId, value) {
     this.state.answers[soalId] = value;
     this._autosave();
@@ -147,10 +168,10 @@ const ExamEngine = {
   isAnswered(soalId) { return this.state.answers[soalId] !== undefined && this.state.answers[soalId] !== ''; },
   getAnsweredCount() { return Object.keys(this.state.answers).filter(k => this.state.answers[k] !== '').length; },
 
-  // === VIOLATIONS ===
-  recordViolation(type, detail) {
+  // ── Pencatatan Pelanggaran Kiosk Mode ──
+  async recordViolation(type, detail) {
     if (this.state.ended) return;
-    
+
     // Cegah pencatatan dobel dari blur dan visibilitychange yang terjadi bersamaan
     const now = Date.now();
     if (this._lastViolationTime && (now - this._lastViolationTime < 1500)) {
@@ -166,10 +187,10 @@ const ExamEngine = {
     };
     this.state.violations.push(violation);
     this.state.violationCount++;
-    this._autosave();
+    await this._autosave();
 
-    // Log ke audit
-    DB.addLog({
+    // Log ke tabel audit_logs Supabase
+    await DB.addLog({
       type: `PELANGGARAN_${type}`,
       category: 'violation',
       hasilId: this.state.hasilId,
@@ -189,23 +210,23 @@ const ExamEngine = {
     };
   },
 
-  // === SUBMIT ===
-  submit(reason = 'manual') {
+  // ── Submit & Penilaian Akhir (Kirim ke Cloud) ──
+  async submit(reason = 'manual') {
     if (this.state.ended) return null;
     this.state.ended = true;
     this.stopTimer();
     this.stopAutosave();
-    this._autosave();
+    await this._autosave();
 
     const ujian = this.state.ujian;
     const siswa = this.state.siswa;
     const elapsed = Math.floor((Date.now() - this.state.startTime) / 1000);
 
-    // Hitung nilai
+    // Hitung nilai otomatis
     const scoring = Utils.hitungNilai(ujian, { answers: this.state.answers }, this.state.soalList);
 
-    // Update hasil
-    DB.updateHasil(this.state.hasilId, {
+    // Kirim hasil ujian ke database Supabase
+    await DB.updateHasil(this.state.hasilId, {
       status: reason === 'suspended' ? 'ditangguhkan' : 'selesai',
       nilai: scoring.nilai,
       lulus: scoring.lulus,
@@ -217,8 +238,8 @@ const ExamEngine = {
       answers: this.state.answers,
     });
 
-    // Log submit
-    DB.addLog({
+    // Catat log submit ke audit_logs Supabase
+    await DB.addLog({
       type: reason === 'timeout' ? 'WAKTU_HABIS' : reason === 'suspended' ? 'DITANGGUHKAN' : 'SUBMIT',
       category: 'exam',
       hasilId: this.state.hasilId,
@@ -230,21 +251,21 @@ const ExamEngine = {
       severity: reason === 'suspended' ? 'danger' : 'success',
     });
 
-    // Hapus data sementara
+    // Bersihkan jawaban lokal
     DB.remove(`jawaban_${ujian.id}_${siswa.userId}`);
 
     return { scoring, hasilId: this.state.hasilId };
   },
 
-  // === EXAM MODE DETECTION ===
+  // ── Deteksi & Pencegahan Pelanggaran Browser ──
   setupViolationDetection(onViolation, onSuspend) {
     const self = this;
 
     // Page Visibility API
-    const handleVisibilityChange = () => {
+    const handleVisibilityChange = async () => {
       if (self.state.ended || self.state.paused) return;
       if (document.visibilityState === 'hidden') {
-        const result = self.recordViolation('PINDAH_TAB', 'Siswa berpindah tab atau meminimize jendela');
+        const result = await self.recordViolation('PINDAH_TAB', 'Siswa berpindah tab atau meminimize jendela');
         if (result) onViolation(result, 'Terdeteksi aktivitas meninggalkan halaman ujian. Silakan kembali ke ujian.');
         if (result?.suspended) onSuspend();
       }
@@ -252,10 +273,10 @@ const ExamEngine = {
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     // Fullscreen change
-    const handleFullscreenChange = () => {
+    const handleFullscreenChange = async () => {
       if (self.state.ended || self.state.paused) return;
       if (!Utils.isFullscreen()) {
-        const result = self.recordViolation('KELUAR_FULLSCREEN', 'Siswa keluar dari mode fullscreen');
+        const result = await self.recordViolation('KELUAR_FULLSCREEN', 'Siswa keluar dari mode fullscreen');
         if (result) onViolation(result, 'Terdeteksi keluar dari mode ujian (fullscreen). Silakan kembali.');
         if (result?.suspended) onSuspend();
       }
@@ -265,9 +286,9 @@ const ExamEngine = {
     document.addEventListener('mozfullscreenchange', handleFullscreenChange);
 
     // Window blur/focus
-    const handleBlur = () => {
+    const handleBlur = async () => {
       if (self.state.ended || self.state.paused) return;
-      const result = self.recordViolation('BLUR_WINDOW', 'Fokus jendela browser berpindah');
+      const result = await self.recordViolation('BLUR_WINDOW', 'Fokus jendela browser berpindah');
       if (result) onViolation(result, 'Terdeteksi aktivitas meninggalkan halaman ujian. Silakan kembali ke ujian.');
       if (result?.suspended) onSuspend();
     };
@@ -276,7 +297,6 @@ const ExamEngine = {
     // Keyboard shortcuts prevention
     const handleKeydown = (e) => {
       if (self.state.ended) return;
-      // Blokir: F12, Ctrl+Shift+I, Ctrl+U, Alt+F4, Ctrl+W, Ctrl+T, Ctrl+N, PrintScreen, Esc
       const blocked = [
         e.key === 'F12',
         e.ctrlKey && e.shiftKey && e.key === 'I',
@@ -311,10 +331,10 @@ const ExamEngine = {
 
     // Back button (history)
     window.history.pushState(null, '', window.location.href);
-    const handlePopState = () => {
+    const handlePopState = async () => {
       window.history.pushState(null, '', window.location.href);
       if (!self.state.ended) {
-        const result = self.recordViolation('TEKAN_BACK', 'Siswa menekan tombol back browser');
+        const result = await self.recordViolation('TEKAN_BACK', 'Siswa menekan tombol back browser');
         if (result) onViolation(result, 'Tombol back terdeteksi. Anda tidak dapat keluar dari ujian.');
         if (result?.suspended) onSuspend();
       }

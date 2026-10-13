@@ -8,10 +8,12 @@
 </head>
 <body>
 <div id="toast-container"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../js/storage.js"></script>
 <script src="../js/utils.js"></script>
 <script src="../js/auth.js"></script>
 <script>
+DB.init();
 Auth.init();
 const session = Auth.requireRole('siswa', '../index.html');
 if (!session) throw new Error('Unauthorized');
@@ -19,21 +21,40 @@ if (!session) throw new Error('Unauthorized');
 const hasilId = new URLSearchParams(window.location.search).get('hasilId');
 if (!hasilId) { window.location.href = 'dashboard-siswa.html'; throw new Error('No hasilId'); }
 
-const hasil = DB.getHasil().find(h => h.id === hasilId);
-if (!hasil) { window.location.href = 'dashboard-siswa.html'; throw new Error('Hasil not found'); }
+let hasil = null;
+let ujian = null;
+let isDitangguhkan = false;
+let showScore = false;
+let nilaiColor = '';
+let nilaiLabel = '';
 
-const ujian = DB.getUjianById(hasil.ujianId);
-const isDitangguhkan = hasil.status === 'ditangguhkan';
-const showScore = ujian?.tampilkanHasil || DB.getSettings().showScoreImmediately;
+(async () => {
+  hasil = DB.getHasil().find(h => h.id === hasilId);
+  if (!hasil && DB.client) {
+    hasil = await DB.getHasilById(hasilId);
+  }
+  if (!hasil) {
+    window.location.href = 'dashboard-siswa.html';
+    return;
+  }
 
-// Exit fullscreen jika masih aktif
-Utils.exitFullscreen().catch(() => {});
+  ujian = DB.getUjianById(hasil.ujianId);
+  if (!ujian && DB.client) {
+    ujian = await DB.getUjianById(hasil.ujianId);
+  }
 
-// Build tampilan berdasarkan status
-const nilaiColor = hasil.nilai >= 90 ? 'var(--success)' : hasil.nilai >= 75 ? 'var(--primary)' : 'var(--danger)';
-const nilaiLabel = hasil.nilai >= 90 ? '🏆 Luar Biasa!' : hasil.nilai >= 75 ? '✅ Bagus!' : '💪 Terus Semangat!';
+  isDitangguhkan = hasil.status === 'ditangguhkan';
+  showScore = ujian?.tampilkanHasil || DB.getSettings().showScoreImmediately;
 
-document.body.innerHTML = isDitangguhkan ? buildSuspendedPage() : buildSelesaiPage();
+  // Exit fullscreen jika masih aktif
+  Utils.exitFullscreen().catch(() => {});
+
+  // Build tampilan berdasarkan status
+  nilaiColor = (hasil.nilai >= 90) ? 'var(--success)' : (hasil.nilai >= 75 ? 'var(--primary)' : 'var(--danger)');
+  nilaiLabel = (hasil.nilai >= 90) ? '🏆 Luar Biasa!' : (hasil.nilai >= 75 ? '✅ Bagus!' : '💪 Terus Semangat!');
+
+  document.body.innerHTML = isDitangguhkan ? buildSuspendedPage() : buildSelesaiPage();
+})();
 
 function buildSelesaiPage() {
   return `

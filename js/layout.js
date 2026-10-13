@@ -1,6 +1,3 @@
-/**
- * LAYOUT BUILDER - Shared UI Components
- */
 const Layout = {
   GURU_MENU: [
     { section: 'Utama' },
