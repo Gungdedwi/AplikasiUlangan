@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta name="description" content="Dashboard Guru - Aplikasi Ulangan Digital"/>
   <title>Dashboard Guru - Ulangan Digital</title>
-  <link rel="stylesheet" href="../css/style.css"/>
+  <link rel="stylesheet" href="../css/style.css?v=2.2"/>
 </head>
 <body>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../js/storage.js"></script>
-<script src="../js/utils.js"></script>
-<script src="../js/auth.js"></script>
-<script src="../js/layout.js"></script>
+<script src="../js/storage.js?v=2.2"></script>
+<script src="../js/utils.js?v=2.2"></script>
+<script src="../js/auth.js?v=2.2"></script>
+<script src="../js/layout.js?v=2.2"></script>
 <script>
 DB.init();
 Auth.init();
@@ -68,9 +68,51 @@ function renderDashboard() {
         <a href="bank-soal.html" class="btn btn-outline">
           📚 Bank Soal
         </a>
+        <a href="manajemen-ujian.html" class="btn btn-outline">
+          📋 Manajemen Ujian
+        </a>
+        <a href="hasil.html" class="btn btn-outline">
+          📊 Hasil & Nilai
+        </a>
         <a href="manajemen-ujian.html" class="btn btn-primary">
           ➕ Buat Ujian Baru
         </a>
+      </div>
+    </div>
+
+    <!-- Quick Access Cards -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-bottom:24px">
+      <div class="card" style="cursor:pointer;border-left:4px solid var(--primary);transition:all 0.2s" onclick="window.location.href='manajemen-ujian.html'">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="font-weight:700;font-size:15px;color:var(--gray-900);display:flex;align-items:center;gap:8px">
+            <span style="font-size:20px">📋</span> Manajemen Ujian
+          </div>
+          <span class="badge badge-primary">${ujianList.length} Ujian</span>
+        </div>
+        <p style="font-size:13px;color:var(--gray-600);margin-bottom:12px">Buat ujian baru, atur durasi, jadwal, kelas, dan aktifkan ujian untuk siswa.</p>
+        <a href="manajemen-ujian.html" class="btn btn-sm btn-primary" style="width:100%;text-align:center">Kelola Ujian →</a>
+      </div>
+
+      <div class="card" style="cursor:pointer;border-left:4px solid var(--success);transition:all 0.2s" onclick="window.location.href='bank-soal.html'">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="font-weight:700;font-size:15px;color:var(--gray-900);display:flex;align-items:center;gap:8px">
+            <span style="font-size:20px">📚</span> Bank Soal
+          </div>
+          <span class="badge badge-success">${soalList.length} Soal</span>
+        </div>
+        <p style="font-size:13px;color:var(--gray-600);margin-bottom:12px">Kelola kumpulan soal (PG, Isian, Uraian, dsb.) per mata pelajaran.</p>
+        <a href="bank-soal.html" class="btn btn-sm btn-outline" style="width:100%;text-align:center">Kelola Soal →</a>
+      </div>
+
+      <div class="card" style="cursor:pointer;border-left:4px solid #8b5cf6;transition:all 0.2s" onclick="window.location.href='hasil.html'">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="font-weight:700;font-size:15px;color:var(--gray-900);display:flex;align-items:center;gap:8px">
+            <span style="font-size:20px">📊</span> Hasil & Nilai
+          </div>
+          <span class="badge" style="background:#ede9fe;color:#6d28d9">${selesaiHasil.length} Selesai</span>
+        </div>
+        <p style="font-size:13px;color:var(--gray-600);margin-bottom:12px">Rekap nilai siswa, pantau status pengerjaan, dan ekspor data ke file CSV.</p>
+        <a href="hasil.html" class="btn btn-sm btn-outline" style="width:100%;text-align:center">Buka Hasil & Nilai →</a>
       </div>
     </div>
 
