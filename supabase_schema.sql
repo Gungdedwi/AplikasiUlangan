@@ -9,7 +9,7 @@ create table if not exists public.users (
   username text unique not null,
   password text,
   name text not null,
-  role text not null check (role in ('guru', 'siswa')),
+  role text not null check (role in ('admin', 'guru', 'siswa')),
   email text,
   kelas text,
   no_absen text,
@@ -137,16 +137,7 @@ create policy "Anon audit_logs policy" on public.audit_logs for all to anon usin
 -- ── 8. Data Awal (Seed Data) ──
 insert into public.users (id, username, password, name, role, email, active)
 values
-  ('u-guru-1', 'guru1', 'guru123', 'Pak Budi Santoso', 'guru', 'guru1@sekolah.id', true),
-  ('u-guru-2', 'guru2', 'guru123', 'Bu Sri Wulandari', 'guru', 'guru2@sekolah.id', true)
-on conflict (username) do nothing;
-
-insert into public.users (id, username, password, name, role, kelas, no_absen, active)
-values
-  ('u-siswa-1', 'siswa1', '12345', 'Ahmad Fauzi', 'siswa', 'XI IPA 1', '01', true),
-  ('u-siswa-2', 'siswa2', '12345', 'Budi Raharjo', 'siswa', 'XI IPA 1', '02', true),
-  ('u-siswa-3', 'siswa3', '12345', 'Citra Dewi', 'siswa', 'XI IPA 1', '03', true),
-  ('u-siswa-4', 'siswa4', '12345', 'Diana Putri', 'siswa', 'XI IPA 2', '01', true)
+  ('u-admin-1', 'admin', 'admin123', 'Administrator Sistem', 'admin', 'admin@sekolah.id', true)
 on conflict (username) do nothing;
 
 insert into public.soal (id, tipe, mapel, kelas, bab, pertanyaan, pilihan, jawaban, bobot, tingkat, pembuat_id)

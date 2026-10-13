@@ -15,7 +15,7 @@
 <script>
 DB.init();
 Auth.init();
-const session = Layout.initGuru('audit-log');
+const session = Layout.initStaff('audit-log', ['admin']);
 
 let filterCategory = 'semua';
 let filterSeverity = 'semua';
