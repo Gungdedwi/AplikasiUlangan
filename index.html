@@ -3,15 +3,11 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <meta name="description" content="Aplikasi Ulangan Digital - Sistem asesmen online modern untuk guru dan siswa Indonesia"/>
+  <meta name="description" content="Aplikasi Ulangan Digital - Portal Login Siswa untuk Asesmen Online"/>
   <meta http-equiv="X-Content-Type-Options" content="nosniff"/>
   <meta http-equiv="X-Frame-Options" content="DENY"/>
-  <title>Login - Aplikasi Ulangan Digital</title>
+  <title>Login Siswa - Ulangan Digital</title>
   <link rel="stylesheet" href="css/style.css"/>
-  <style>
-    .login-form-section { display: none; }
-    .login-form-section.active { display: block; animation: fadeInUp 0.3s ease; }
-  </style>
 </head>
 <body>
 <div id="toast-container"></div>
@@ -23,83 +19,53 @@
 
   <div class="login-card animate-fade-in-up">
     <div class="login-header">
-      <div class="login-logo">📝</div>
-      <h1 class="login-title">Ulangan Digital</h1>
-      <p class="login-subtitle">Sistem Asesmen Online Sekolah</p>
+      <div class="login-logo">🎓</div>
+      <h1 class="login-title">Portal Siswa</h1>
+      <p class="login-subtitle">Sistem Asesmen Online Ulangan Digital</p>
     </div>
 
     <div class="login-body">
-      <!-- Tab Guru / Siswa -->
-      <div class="login-tabs">
-        <button class="login-tab active" id="tab-guru" onclick="switchTab('guru')">👨‍🏫 Guru</button>
-        <button class="login-tab" id="tab-siswa" onclick="switchTab('siswa')">🎓 Siswa</button>
-      </div>
-
       <!-- Alert Error -->
       <div id="login-error" class="alert alert-danger" style="display:none">
         <span class="alert-icon">❌</span>
         <span id="login-error-msg">Login gagal</span>
       </div>
 
-      <!-- Form Guru -->
-      <div class="login-form-section active" id="form-guru">
-        <form onsubmit="doLogin(event,'guru')" novalidate>
-          <div class="form-group">
-            <label class="form-label">Username Guru <span class="required">*</span></label>
-            <div class="input-wrapper">
-              <span class="input-icon">👤</span>
-              <input type="text" id="guru-username" class="form-control" placeholder="Masukkan username" autocomplete="username" maxlength="50"/>
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Password <span class="required">*</span></label>
-            <div class="input-wrapper">
-              <span class="input-icon">🔒</span>
-              <input type="password" id="guru-password" class="form-control" placeholder="Masukkan password" autocomplete="current-password" maxlength="100"/>
-              <button type="button" class="input-action" onclick="togglePassword('guru-password')">👁️</button>
-            </div>
-          </div>
-          <button type="submit" class="btn btn-primary btn-full btn-lg" id="btn-guru-login">
-            <span id="btn-guru-text">Masuk sebagai Guru</span>
-            <span id="btn-guru-loading" class="spinner spinner-sm" style="display:none"></span>
-          </button>
-          <p class="text-center text-sm text-muted mt-4">
-            Demo: <strong>guru1</strong> / <strong>guru123</strong>
-          </p>
-        </form>
-      </div>
-
       <!-- Form Siswa -->
-      <div class="login-form-section" id="form-siswa">
-        <form onsubmit="doLogin(event,'siswa')" novalidate>
-          <div class="form-group">
-            <label class="form-label">Username Siswa <span class="required">*</span></label>
-            <div class="input-wrapper">
-              <span class="input-icon">🎓</span>
-              <input type="text" id="siswa-username" class="form-control" placeholder="Masukkan username" autocomplete="username" maxlength="50"/>
-            </div>
+      <form onsubmit="doLogin(event)" novalidate>
+        <div class="form-group">
+          <label class="form-label">Username / NIS Siswa <span class="required">*</span></label>
+          <div class="input-wrapper">
+            <span class="input-icon">🎓</span>
+            <input type="text" id="siswa-username" class="form-control" placeholder="Masukkan username atau NIS" autocomplete="username" maxlength="50"/>
           </div>
-          <div class="form-group">
-            <label class="form-label">PIN / Password <span class="required">*</span></label>
-            <div class="input-wrapper">
-              <span class="input-icon">🔑</span>
-              <input type="password" id="siswa-password" class="form-control" placeholder="Masukkan PIN/password" autocomplete="current-password" maxlength="100"/>
-              <button type="button" class="input-action" onclick="togglePassword('siswa-password')">👁️</button>
-            </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">PIN / Password <span class="required">*</span></label>
+          <div class="input-wrapper">
+            <span class="input-icon">🔑</span>
+            <input type="password" id="siswa-password" class="form-control" placeholder="Masukkan PIN atau password" autocomplete="current-password" maxlength="100"/>
+            <button type="button" class="input-action" onclick="togglePassword('siswa-password')">👁️</button>
           </div>
-          <button type="submit" class="btn btn-primary btn-full btn-lg" id="btn-siswa-login">
-            <span id="btn-siswa-text">Masuk sebagai Siswa</span>
-            <span id="btn-siswa-loading" class="spinner spinner-sm" style="display:none"></span>
-          </button>
-          <p class="text-center text-sm text-muted mt-4">
-            Demo: <strong>siswa1</strong> / <strong>12345</strong>
-          </p>
-        </form>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full btn-lg" id="btn-siswa-login">
+          <span id="btn-siswa-text">Masuk sebagai Siswa</span>
+          <span id="btn-siswa-loading" class="spinner spinner-sm" style="display:none"></span>
+        </button>
+      </form>
+
+      <div class="divider" style="margin:20px 0"></div>
+
+      <div style="text-align:center">
+        <p style="font-size:13px;color:var(--gray-600);margin-bottom:8px">Bukan siswa? Pendidik atau Staf Sekolah:</p>
+        <a href="pages/login-guru.html" class="btn btn-outline btn-full btn-sm" style="font-weight:600">
+          👨‍🏫 Masuk sebagai Guru & Administrator →
+        </a>
       </div>
 
-      <div class="divider"></div>
+      <div class="divider" style="margin:20px 0"></div>
       <p class="text-center text-xs text-muted">
-        🔒 Sistem dilindungi enkripsi & aman digunakan<br/>
+        🔒 Sistem asesmen digital aman & terlindungi<br/>
         <strong>SMA Negeri Contoh</strong> • TA 2025/2026
       </p>
     </div>
@@ -111,26 +77,21 @@
 <script src="js/utils.js"></script>
 <script src="js/auth.js"></script>
 <script>
-  // Init
+  // Inisialisasi
   DB.init();
   Auth.init();
   DB.seed();
 
-  // Redirect jika sudah login
+  // Redirect jika sudah memiliki sesi aktif
   const session = Auth.getSession();
   if (session) {
-    window.location.href = session.role === 'guru' ? 'pages/dashboard-guru.html' : 'pages/dashboard-siswa.html';
-  }
-
-  let currentTab = 'guru';
-
-  function switchTab(tab) {
-    currentTab = tab;
-    document.getElementById('tab-guru').classList.toggle('active', tab === 'guru');
-    document.getElementById('tab-siswa').classList.toggle('active', tab === 'siswa');
-    document.getElementById('form-guru').classList.toggle('active', tab === 'guru');
-    document.getElementById('form-siswa').classList.toggle('active', tab === 'siswa');
-    hideError();
+    if (session.role === 'siswa') {
+      window.location.href = 'pages/dashboard-siswa.html';
+    } else if (session.role === 'admin') {
+      window.location.href = 'pages/dashboard-guru.html';
+    } else {
+      window.location.href = 'pages/bank-soal.html';
+    }
   }
 
   function hideError() {
@@ -147,41 +108,41 @@
     el.type = el.type === 'password' ? 'text' : 'password';
   }
 
-  function setLoading(role, loading) {
-    document.getElementById(`btn-${role}-text`).style.display = loading ? 'none' : 'inline';
-    document.getElementById(`btn-${role}-loading`).style.display = loading ? 'inline-block' : 'none';
-    document.getElementById(`btn-${role}-login`).disabled = loading;
+  function setLoading(loading) {
+    document.getElementById('btn-siswa-text').style.display = loading ? 'none' : 'inline';
+    document.getElementById('btn-siswa-loading').style.display = loading ? 'inline-block' : 'none';
+    document.getElementById('btn-siswa-login').disabled = loading;
   }
 
-  async function doLogin(e, role) {
+  async function doLogin(e) {
     e.preventDefault();
     hideError();
     Utils.clearFieldErrors();
 
-    const username = document.getElementById(`${role}-username`).value;
-    const password = document.getElementById(`${role}-password`).value;
+    const username = document.getElementById('siswa-username').value;
+    const password = document.getElementById('siswa-password').value;
 
-    if (!username.trim()) { showError('Username harus diisi'); return; }
-    if (!password.trim()) { showError('Password harus diisi'); return; }
+    if (!username.trim()) { showError('Username / NIS harus diisi'); return; }
+    if (!password.trim()) { showError('PIN / Password harus diisi'); return; }
 
-    setLoading(role, true);
+    setLoading(true);
 
-    // Simulasi async (untuk UX)
-    await new Promise(r => setTimeout(r, 600));
+    // UX smoothing
+    await new Promise(r => setTimeout(r, 500));
 
-    const result = await Auth.login(username, password, role);
-    setLoading(role, false);
+    const result = await Auth.login(username, password, 'siswa');
+    setLoading(false);
 
     if (!result.success) {
       showError(result.error);
-      document.getElementById(`${role}-password`).value = '';
+      document.getElementById('siswa-password').value = '';
       return;
     }
 
     Utils.toast(`Selamat datang, ${result.user.name}!`, 'success');
     setTimeout(() => {
-      window.location.href = role === 'guru' ? 'pages/dashboard-guru.html' : 'pages/dashboard-siswa.html';
-    }, 500);
+      window.location.href = 'pages/dashboard-siswa.html';
+    }, 400);
   }
 </script>
 </body>

@@ -12,7 +12,7 @@
 
 ## File structure
 
-- HTML files: `index.html`, `pages/audit-log.html`, `pages/bank-soal.html`, `pages/dashboard-guru.html`, `pages/dashboard-siswa.html`, `pages/hasil.html`, `pages/instruksi.html`, `pages/manajemen-ujian.html`, `pages/pengaturan.html`, `pages/selesai.html`, `pages/ujian.html`
+- HTML files: `index.html`, `pages/audit-log.html`, `pages/bank-soal.html`, `pages/dashboard-guru.html`, `pages/dashboard-siswa.html`, `pages/hasil.html`, `pages/instruksi.html`, `pages/login-guru.html`, `pages/manajemen-ujian.html`, `pages/pengaturan.html`, `pages/selesai.html`, `pages/ujian.html`
 - CSS files: `css/style.css`
 - Scripts: `js/auth.js`, `js/exam.js`, `js/layout.js`, `js/storage.js`, `js/utils.js`
 

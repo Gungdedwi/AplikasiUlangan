@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="description" content="Portal Login Pendidik & Administrator - Aplikasi Ulangan Digital"/>
+  <meta http-equiv="X-Content-Type-Options" content="nosniff"/>
+  <meta http-equiv="X-Frame-Options" content="DENY"/>
+  <title>Login Guru & Administrator - Ulangan Digital</title>
+  <link rel="stylesheet" href="../css/style.css"/>
+</head>
+<body>
+<div id="toast-container"></div>
+
+<div class="login-page">
+  <div class="login-bg-circles">
+    <span></span><span></span><span></span>
+  </div>
+
+  <div class="login-card animate-fade-in-up">
+    <div class="login-header" style="background:linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%)">
+      <div class="login-logo">👨‍🏫</div>
+      <h1 class="login-title">Portal Pendidik & Admin</h1>
+      <p class="login-subtitle">Panel Pengelolaan Soal & Sistem Ulangan</p>
+    </div>
+
+    <div class="login-body">
+      <!-- Alert Error -->
+      <div id="login-error" class="alert alert-danger" style="display:none">
+        <span class="alert-icon">❌</span>
+        <span id="login-error-msg">Login gagal</span>
+      </div>
+
+      <!-- Form Guru & Admin -->
+      <form onsubmit="doLogin(event)" novalidate>
+        <div class="form-group">
+          <label class="form-label">Username atau Email <span class="required">*</span></label>
+          <div class="input-wrapper">
+            <span class="input-icon">👤</span>
+            <input type="text" id="staff-username" class="form-control" placeholder="Masukkan username / email" autocomplete="username" maxlength="50"/>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password <span class="required">*</span></label>
+          <div class="input-wrapper">
+            <span class="input-icon">🔒</span>
+            <input type="password" id="staff-password" class="form-control" placeholder="Masukkan password" autocomplete="current-password" maxlength="100"/>
+            <button type="button" class="input-action" onclick="togglePassword('staff-password')">👁️</button>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full btn-lg" id="btn-staff-login">
+          <span id="btn-staff-text">Masuk ke Panel</span>
+          <span id="btn-staff-loading" class="spinner spinner-sm" style="display:none"></span>
+        </button>
+      </form>
+
+      <div class="divider" style="margin:20px 0"></div>
+
+      <div style="text-align:center">
+        <p style="font-size:13px;color:var(--gray-600);margin-bottom:8px">Masuk sebagai peserta ujian?</p>
+        <a href="../index.html" class="btn btn-outline btn-full btn-sm" style="font-weight:600">
+          ← Kembali ke Portal Siswa
+        </a>
+      </div>
+
+      <div class="divider" style="margin:20px 0"></div>
+      <p class="text-center text-xs text-muted">
+        🛡️ Akses Terbatas untuk Guru & Administrator Sekolah<br/>
+        <strong>SMA Negeri Contoh</strong> • TA 2025/2026
+      </p>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../js/storage.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/auth.js"></script>
+<script>
+  // Inisialisasi
+  DB.init();
+  Auth.init();
+  DB.seed();
+
+  // Redirect jika sudah memiliki sesi aktif
+  const session = Auth.getSession();
+  if (session) {
+    if (session.role === 'admin') {
+      window.location.href = 'dashboard-guru.html';
+    } else if (session.role === 'guru') {
+      window.location.href = 'bank-soal.html';
+    } else {
+      window.location.href = 'dashboard-siswa.html';
+    }
+  }
+
+  function hideError() {
+    document.getElementById('login-error').style.display = 'none';
+  }
+
+  function showError(msg) {
+    document.getElementById('login-error').style.display = 'flex';
+    document.getElementById('login-error-msg').textContent = msg;
+  }
+
+  function togglePassword(id) {
+    const el = document.getElementById(id);
+    el.type = el.type === 'password' ? 'text' : 'password';
+  }
+
+  function setLoading(loading) {
+    document.getElementById('btn-staff-text').style.display = loading ? 'none' : 'inline';
+    document.getElementById('btn-staff-loading').style.display = loading ? 'inline-block' : 'none';
+    document.getElementById('btn-staff-login').disabled = loading;
+  }
+
+  async function doLogin(e) {
+    e.preventDefault();
+    hideError();
+    Utils.clearFieldErrors();
+
+    const username = document.getElementById('staff-username').value;
+    const password = document.getElementById('staff-password').value;
+
+    if (!username.trim()) { showError('Username / Email harus diisi'); return; }
+    if (!password.trim()) { showError('Password harus diisi'); return; }
+
+    setLoading(true);
+
+    // UX smoothing
+    await new Promise(r => setTimeout(r, 500));
+
+    const result = await Auth.login(username, password, ['guru', 'admin']);
+    setLoading(false);
+
+    if (!result.success) {
+      showError(result.error);
+      document.getElementById('staff-password').value = '';
+      return;
+    }
+
+    Utils.toast(`Selamat datang, ${result.user.name}!`, 'success');
+    setTimeout(() => {
+      if (result.user.role === 'admin') {
+        window.location.href = 'dashboard-guru.html';
+      } else {
+        window.location.href = 'bank-soal.html';
+      }
+    }, 400);
+  }
+</script>
+</body>
+</html>
