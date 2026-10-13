@@ -15,7 +15,7 @@
 <script>
 DB.init();
 Auth.init();
-const session = Layout.initGuru('manajemen-ujian');
+const session = Layout.initStaff('manajemen-ujian', ['admin']);
 let editingUjianId = null;
 
 try {
@@ -42,7 +42,7 @@ window.addEventListener('supabase-synced', () => {
 
 function renderManajemenUjian() {
   Layout.setPageTitle('Manajemen Ujian');
-  const ujianList = DB.getUjian().filter(u => Boolean(u) && (!u.guruId || u.guruId === session.userId || session.role === 'guru'));
+  const ujianList = DB.getUjian().filter(u => Boolean(u) && (!u.guruId || u.guruId === session.userId || session.role === 'admin' || session.role === 'guru'));
 
   const content = `
   <div class="animate-fade-in">
@@ -88,7 +88,7 @@ function renderManajemenUjian() {
 }
 
 function renderUjianList() {
-  const ujianList = DB.getUjian().filter(u => Boolean(u) && (!u.guruId || u.guruId === session.userId || session.role === 'guru')).sort((a,b) => b.createdAt - a.createdAt);
+  const ujianList = DB.getUjian().filter(u => Boolean(u) && (!u.guruId || u.guruId === session.userId || session.role === 'admin' || session.role === 'guru')).sort((a,b) => b.createdAt - a.createdAt);
   const container = document.getElementById('ujian-list-container');
   if (!container) return;
 
