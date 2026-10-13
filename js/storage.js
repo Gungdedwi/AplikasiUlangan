@@ -8,16 +8,23 @@ const DB = {
   getSupabaseConfig() {
     try {
       const stored = localStorage.getItem(this.PREFIX + 'supabase_config');
-      if (stored) return JSON.parse(stored);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.url) parsed.url = parsed.url.replace(/\/rest\/v1\/?$/, '').replace(/\/$/, '');
+        return parsed;
+      }
     } catch (e) {}
     return {
-      url: window.SUPABASE_URL || '',
-      anonKey: window.SUPABASE_ANON_KEY || ''
+      url: (window.SUPABASE_URL || 'https://dxjrpicfzdxuooyqyosf.supabase.co').replace(/\/rest\/v1\/?$/, '').replace(/\/$/, ''),
+      anonKey: window.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4anJwaWNmemR4dW9veXF5b3NmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2MzIwMjEsImV4cCI6MjEwNzIwODAyMX0.Mu1q2kCamE03Sklp6az9BqAbt4mROrNsFtG7yKctuGM'
     };
   },
 
   setSupabaseConfig(cfg) {
     try {
+      if (cfg && cfg.url) {
+        cfg.url = cfg.url.replace(/\/rest\/v1\/?$/, '').replace(/\/$/, '');
+      }
       localStorage.setItem(this.PREFIX + 'supabase_config', JSON.stringify(cfg));
       this.init();
       return true;
@@ -30,7 +37,8 @@ const DB = {
     const config = this.getSupabaseConfig();
     if (window.supabase && config.url && config.anonKey) {
       try {
-        this.client = window.supabase.createClient(config.url, config.anonKey, {
+        const cleanUrl = config.url.replace(/\/rest\/v1\/?$/, '').replace(/\/$/, '');
+        this.client = window.supabase.createClient(cleanUrl, config.anonKey, {
           auth: {
             persistSession: true,
             autoRefreshToken: true,
@@ -60,7 +68,16 @@ const DB = {
     }
     try {
       const { data, error } = await this.client.from('users').select('id').limit(1);
-      if (error) return { success: false, error: error.message };
+      if (error) {
+        if (error.code === 'PGRST205' || (error.message && error.message.includes('Could not find the table'))) {
+          return {
+            success: false,
+            needSchema: true,
+            error: "Koneksi ke Supabase berhasil! Namun tabel 'users' belum dibuat. Silakan jalankan skrip di SQL Editor Supabase."
+          };
+        }
+        return { success: false, error: error.message };
+      }
       this.isConnected = true;
       return { success: true, count: data ? data.length : 0 };
     } catch (err) {
