@@ -16,17 +16,6 @@
 DB.init();
 Auth.init();
 const session = Layout.initStaff('pengaturan', ['admin', 'guru']);
-try {
-  if (session) renderPengaturan();
-} catch (err) {
-  console.error('Error rendering Pengaturan:', err);
-  Layout.setContent(`
-    <div class="alert alert-danger" style="margin:24px">
-      <span class="alert-icon">❌</span>
-      <div><strong>Gagal memuat Pengaturan:</strong> ${Utils.escapeHtml(err.message)}</div>
-    </div>
-  `);
-}
 
 const COMMON_MAPEL = ['Informatika', 'Matematika', 'Bahasa Indonesia', 'Bahasa Inggris', 'IPA', 'IPS', 'Fisika', 'Kimia', 'Biologi', 'PJOK', 'PKN', 'Seni Budaya', 'PAI / Agama'];
 const COMMON_KELAS = ['7A', '7B', '7C', '8A', '8B', '8C', '9A', '9B', '9C', 'X IPA 1', 'XI IPA 1', 'XII IPA 1'];
@@ -42,6 +31,18 @@ function toggleTagInInput(inputId, tag) {
     items.push(tag);
   }
   input.value = items.join(', ');
+}
+
+try {
+  if (session) renderPengaturan();
+} catch (err) {
+  console.error('Error rendering Pengaturan:', err);
+  Layout.setContent(`
+    <div class="alert alert-danger" style="margin:24px">
+      <span class="alert-icon">❌</span>
+      <div><strong>Gagal memuat Pengaturan:</strong> ${Utils.escapeHtml(err.message)}</div>
+    </div>
+  `);
 }
 
 function renderPengaturan() {

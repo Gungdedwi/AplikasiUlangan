@@ -18,6 +18,17 @@ Auth.init();
 const session = Layout.initStaff('manajemen-ujian', ['admin', 'guru']);
 let editingUjianId = null;
 
+const myMapels = DB.getGuruMapels(session);
+const myKelas = DB.getGuruKelas(session);
+
+function getTeacherUjian() {
+  return DB.getUjian().filter(u => {
+    if (!u) return false;
+    if (session.role === 'admin') return true;
+    return DB.isGuruMatch(session, u.mapel, u.kelas) || u.guruId === session.userId;
+  });
+}
+
 try {
   if (session) renderManajemenUjian();
 } catch (err) {
@@ -39,17 +50,6 @@ if (DB.client) {
 window.addEventListener('supabase-synced', () => {
   if (session) renderManajemenUjian();
 });
-
-const myMapels = DB.getGuruMapels(session);
-const myKelas = DB.getGuruKelas(session);
-
-function getTeacherUjian() {
-  return DB.getUjian().filter(u => {
-    if (!u) return false;
-    if (session.role === 'admin') return true;
-    return DB.isGuruMatch(session, u.mapel, u.kelas) || u.guruId === session.userId;
-  });
-}
 
 function renderManajemenUjian() {
   Layout.setPageTitle('Manajemen Ujian');
