@@ -491,6 +491,88 @@ const DB = {
     return user;
   },
 
+  async addUsersBatch(usersList, onProgress) {
+    if (!Array.isArray(usersList) || usersList.length === 0) {
+      return { inserted: 0, updated: 0, total: 0 };
+    }
+
+    const currentUsers = this.getUsers();
+    const userMap = new Map();
+    currentUsers.forEach(u => {
+      if (u.username) userMap.set(u.username.toLowerCase(), u);
+    });
+
+    const preparedUsers = [];
+    let insertedCount = 0;
+    let updatedCount = 0;
+
+    for (const item of usersList) {
+      const username = String(item.username || '').trim();
+      if (!username) continue;
+
+      const rawPass = String(item.password || '12345').trim();
+      let hashedPass = rawPass;
+      if (hashedPass.length !== 64 && typeof Utils !== 'undefined' && Utils.hashPassword) {
+        hashedPass = await Utils.hashPassword(rawPass);
+      }
+
+      const key = username.toLowerCase();
+      const existing = userMap.get(key);
+
+      const userObj = {
+        id: existing?.id || item.id || ('u-' + Utils.uuid()),
+        username: username,
+        password: hashedPass,
+        name: String(item.name || item.nama || username).trim(),
+        role: item.role || 'siswa',
+        kelas: item.kelas || '',
+        noAbsen: item.noAbsen || item.no_absen || '',
+        no_absen: item.noAbsen || item.no_absen || '',
+        mapel: item.mapel || '',
+        kelasAmpu: item.kelasAmpu || '',
+        active: item.active !== false,
+        createdAt: existing?.createdAt || Date.now()
+      };
+
+      if (existing) {
+        userMap.set(key, { ...existing, ...userObj });
+        updatedCount++;
+      } else {
+        userMap.set(key, userObj);
+        insertedCount++;
+      }
+      preparedUsers.push(userObj);
+    }
+
+    // Simpan ke localStorage cache
+    this.setUsers(Array.from(userMap.values()));
+
+    // Kirim batch ke Supabase Cloud (chunking 50 baris per request)
+    if (this.client && preparedUsers.length > 0) {
+      const CHUNK_SIZE = 50;
+      for (let i = 0; i < preparedUsers.length; i += CHUNK_SIZE) {
+        const chunk = preparedUsers.slice(i, i + CHUNK_SIZE).map(u => this._toSnakeUser(u));
+        try {
+          const { error } = await this.client.from('users').upsert(chunk, { onConflict: 'username' });
+          if (error && (error.message?.includes('mapel') || error.message?.includes('kelas_ampu'))) {
+            chunk.forEach(r => { delete r.mapel; delete r.kelas_ampu; });
+            await this.client.from('users').upsert(chunk, { onConflict: 'username' });
+          }
+        } catch (err) {
+          console.error('Supabase addUsersBatch chunk error:', err);
+        }
+
+        if (typeof onProgress === 'function') {
+          onProgress(Math.min(i + CHUNK_SIZE, preparedUsers.length), preparedUsers.length);
+        }
+      }
+    } else if (typeof onProgress === 'function') {
+      onProgress(preparedUsers.length, preparedUsers.length);
+    }
+
+    return { inserted: insertedCount, updated: updatedCount, total: preparedUsers.length };
+  },
+
   async findUser(username, password) {
     const cleanUsername = (username || '').trim();
     if (!cleanUsername || !password) return null;
