@@ -1098,6 +1098,31 @@ const DB = {
   getLogsByHasil(hasilId) { return this.getLogs().filter(l => l.hasilId === hasilId); },
   getLogsByUjian(ujianId) { return this.getLogs().filter(l => l.ujianId === ujianId); },
 
+  // ── Status Baca Audit Log ──
+  getLastSeenAuditLog() {
+    return Number(this.get('audit_log_last_seen') || 0);
+  },
+
+  markLogsAsSeen() {
+    const now = Date.now();
+    this.set('audit_log_last_seen', now);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('audit-log-seen', { detail: { timestamp: now } }));
+    }
+    return now;
+  },
+
+  getUnreadViolationsCount() {
+    const logs = this.getLogs();
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const lastSeen = this.getLastSeenAuditLog();
+    return logs.filter(l => 
+      l.category === 'violation' && 
+      (l.timestamp || 0) >= today.getTime() && 
+      (l.timestamp || 0) > lastSeen
+    ).length;
+  },
+
   // ── Sesi Pengguna ──
   getSession() { return this.get('session'); },
   setSession(data) { return this.set('session', { ...data, loginAt: Date.now() }); },

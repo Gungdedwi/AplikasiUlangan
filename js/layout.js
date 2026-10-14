@@ -40,6 +40,9 @@ const Layout = {
       return null;
     }
 
+    if (activeId === 'audit-log' && typeof DB !== 'undefined' && DB.markLogsAsSeen) {
+      DB.markLogsAsSeen();
+    }
     this._buildLayout(session, activeId);
     return session;
   },
@@ -49,6 +52,12 @@ const Layout = {
   },
 
   _buildLayout(session, activeId) {
+    this.currentSession = session;
+    this.currentActiveId = activeId;
+    if (activeId === 'audit-log' && typeof DB !== 'undefined' && DB.markLogsAsSeen) {
+      DB.markLogsAsSeen();
+    }
+
     const stats = this._getGuruStats(session);
     const isAdmin = session.role === 'admin';
     const menuList = isAdmin ? this.ADMIN_MENU : this.GURU_MENU;
@@ -94,7 +103,7 @@ const Layout = {
               <span class="topbar-page-title" id="page-title">Dashboard</span>
             </div>
             <div class="topbar-right">
-              ${isAdmin ? `
+              ${(isAdmin || session.role === 'guru') ? `
               <button class="topbar-notif" onclick="window.location.href='audit-log.html'" title="Notifikasi Pelanggaran">
                 🔔
                 ${stats.violationToday > 0 ? '<span class="notif-dot"></span>' : ''}
@@ -109,13 +118,60 @@ const Layout = {
           </div>
         </div>
       </div>`;
+
+    if (!this._notifListenerAttached && typeof window !== 'undefined') {
+      this._notifListenerAttached = true;
+      window.addEventListener('audit-log-seen', () => this.refreshNotifBadge());
+      window.addEventListener('supabase-synced', () => this.refreshNotifBadge());
+      window.addEventListener('storage-updated', (e) => {
+        if (e.detail?.key === 'audit_log_last_seen' || e.detail?.key === 'audit_logs') {
+          this.refreshNotifBadge();
+        }
+      });
+    }
   },
 
   _getGuruStats(session) {
-    const logs = DB.getLogs();
-    const today = new Date(); today.setHours(0,0,0,0);
-    const violationToday = logs.filter(l => l.category === 'violation' && l.timestamp >= today.getTime()).length;
-    return { violationToday };
+    if (this.currentActiveId === 'audit-log') {
+      return { violationToday: 0 };
+    }
+    const unread = (typeof DB !== 'undefined' && DB.getUnreadViolationsCount)
+      ? DB.getUnreadViolationsCount()
+      : 0;
+    return { violationToday: unread };
+  },
+
+  markAuditLogSeen() {
+    if (typeof DB !== 'undefined' && DB.markLogsAsSeen) {
+      DB.markLogsAsSeen();
+    }
+    this.refreshNotifBadge();
+  },
+
+  refreshNotifBadge() {
+    const stats = this._getGuruStats(this.currentSession || (typeof DB !== 'undefined' ? DB.getSession() : null));
+    const badgeEl = document.querySelector('.sidebar-item[href="audit-log.html"] .badge');
+    if (badgeEl) {
+      if (stats.violationToday > 0) {
+        badgeEl.textContent = stats.violationToday;
+        badgeEl.style.display = 'inline-block';
+      } else {
+        badgeEl.remove();
+      }
+    } else if (stats.violationToday > 0) {
+      const auditLink = document.querySelector('.sidebar-item[href="audit-log.html"]');
+      if (auditLink) {
+        auditLink.insertAdjacentHTML('beforeend', `<span class="badge" style="background:var(--danger);color:white;font-size:10px;padding:1px 6px;border-radius:999px">${stats.violationToday}</span>`);
+      }
+    }
+
+    const notifDot = document.querySelector('.topbar-notif .notif-dot');
+    if (notifDot && stats.violationToday <= 0) {
+      notifDot.remove();
+    } else if (!notifDot && stats.violationToday > 0) {
+      const btn = document.querySelector('.topbar-notif');
+      if (btn) btn.innerHTML = `🔔<span class="notif-dot"></span>`;
+    }
   },
 
   toggleSidebar() {

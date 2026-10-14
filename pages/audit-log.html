@@ -15,10 +15,18 @@
 <script>
 DB.init();
 Auth.init();
-const session = Layout.initStaff('audit-log', ['admin']);
+const session = Layout.initStaff('audit-log', ['admin', 'guru']);
 
 let filterCategory = 'semua';
 let filterSeverity = 'semua';
+
+// Tandai langsung bahwa log telah dibuka dan dilihat
+if (typeof DB !== 'undefined' && DB.markLogsAsSeen) {
+  DB.markLogsAsSeen();
+  if (typeof Layout !== 'undefined' && Layout.refreshNotifBadge) {
+    Layout.refreshNotifBadge();
+  }
+}
 
 try {
   if (session) renderAuditLog();
@@ -35,15 +43,25 @@ try {
 // Sinkronkan data log terbaru dari Supabase Cloud
 if (DB.client) {
   DB.syncFromSupabase().then(() => {
-    if (session) renderAuditLog();
+    if (session) {
+      DB.markLogsAsSeen();
+      renderAuditLog();
+      Layout.refreshNotifBadge();
+    }
   });
 }
 window.addEventListener('supabase-synced', () => {
-  if (session) renderAuditLog();
+  if (session) {
+    DB.markLogsAsSeen();
+    renderAuditLog();
+    Layout.refreshNotifBadge();
+  }
 });
 
 function renderAuditLog() {
   Layout.setPageTitle('Audit Log');
+  DB.markLogsAsSeen();
+  Layout.refreshNotifBadge();
   const content = `
   <div class="animate-fade-in">
     <div class="flex items-center justify-between mb-6">
@@ -51,7 +69,10 @@ function renderAuditLog() {
         <h1 class="page-title">Audit Log</h1>
         <p class="page-subtitle">Rekam jejak seluruh aktivitas sistem</p>
       </div>
-      <button onclick="clearLogs()" class="btn btn-danger btn-sm">🗑️ Hapus Log</button>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button onclick="markAllAsRead()" class="btn btn-outline btn-sm">✓ Tandai Telah Dilihat</button>
+        <button onclick="clearLogs()" class="btn btn-danger btn-sm">🗑️ Hapus Log</button>
+      </div>
     </div>
 
     <!-- Filter -->
@@ -175,9 +196,28 @@ function renderLogList() {
     </div>`;
 }
 
+function markAllAsRead() {
+  DB.markLogsAsSeen();
+  if (typeof Layout !== 'undefined' && Layout.refreshNotifBadge) {
+    Layout.refreshNotifBadge();
+  }
+  Utils.toast('Semua notifikasi pelanggaran telah ditandai dilihat', 'success');
+}
+
 function clearLogs() {
-  Utils.confirm('Hapus Semua Log', 'Yakin ingin menghapus semua audit log? Tindakan ini tidak dapat dibatalkan.', () => {
+  Utils.confirm('Hapus Semua Log', 'Yakin ingin menghapus semua audit log? Tindakan ini tidak dapat dibatalkan.', async () => {
     DB.set('audit_logs', []);
+    DB.markLogsAsSeen();
+    if (DB.client) {
+      try {
+        await DB.client.from('audit_logs').delete().neq('id', '0');
+      } catch (e) {
+        console.warn('Supabase clear logs error:', e);
+      }
+    }
+    if (typeof Layout !== 'undefined' && Layout.refreshNotifBadge) {
+      Layout.refreshNotifBadge();
+    }
     Utils.toast('Audit log berhasil dihapus', 'success');
     renderLogStats();
     renderLogList();
