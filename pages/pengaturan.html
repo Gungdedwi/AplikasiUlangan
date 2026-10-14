@@ -180,6 +180,7 @@ function renderPengaturan() {
       <div class="mt-4" style="display:flex;gap:10px;flex-wrap:wrap">
         <button onclick="resetData()" class="btn btn-danger btn-sm">⚠️ Reset Semua Data</button>
         <button onclick="exportAllData()" class="btn btn-outline btn-sm">📦 Backup Data</button>
+        <button onclick="seedDemoData()" class="btn btn-secondary btn-sm">🌱 Isi Data Contoh (Demo)</button>
       </div>
     </div>
 
@@ -377,6 +378,16 @@ function resetData() {
     Utils.toast('Semua data berhasil direset', 'success');
     setTimeout(() => window.location.href = '../index.html', 1000);
   });
+}
+
+async function seedDemoData() {
+  Utils.confirm('Isi Data Contoh', 'Apakah Anda yakin ingin mengisi data contoh (guru, siswa, bank soal, dan ujian)?', async () => {
+    Utils.toast('Memproses data contoh...', 'info');
+    DB.remove('seeded');
+    await DB.seed();
+    Utils.toast('✅ Data contoh berhasil disiapkan!', 'success');
+    renderPengaturan();
+  }, 'primary');
 }
 
 function exportAllData() {

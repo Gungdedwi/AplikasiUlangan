@@ -136,16 +136,16 @@ function getKode() {
 
 async function checkAutoPreview(kode) {
   if (kode.length !== 6) return;
-  let ujian = DB.getUjianByKode(kode);
-  if (!ujian && DB.client) {
-    ujian = await DB.getUjianByKode(kode);
-  }
+  const ujian = await DB.getUjianByKode(kode);
   if (!ujian) return;
-  showUjianPreview(ujian);
+  await showUjianPreview(ujian);
 }
 
-function showUjianPreview(ujian) {
-  const sudahSelesai = DB.getHasilBySiswaUjian(session.userId, ujian.id);
+async function showUjianPreview(ujian) {
+  let sudahSelesai = DB.getHasilBySiswaUjian(session.userId, ujian.id);
+  if (!sudahSelesai && DB.client) {
+    sudahSelesai = await DB.fetchHasilBySiswaUjian(session.userId, ujian.id);
+  }
   const isAktif = Utils.isUjianAktif(ujian);
   const isBelumMulai = Utils.isUjianBelumMulai(ujian);
   const canViewScore = ujian?.tampilkanHasil || DB.getSettings().showScoreImmediately;
@@ -211,10 +211,7 @@ async function cariUjian(e) {
     return;
   }
   
-  let ujian = DB.getUjianByKode(kode);
-  if (!ujian && DB.client) {
-    ujian = await DB.getUjianByKode(kode);
-  }
+  const ujian = await DB.getUjianByKode(kode);
   if (!ujian) {
     document.getElementById('kode-error').style.display = 'flex';
     document.getElementById('kode-error-msg').textContent = 'Kode ujian tidak ditemukan. Periksa kembali kode Anda.';

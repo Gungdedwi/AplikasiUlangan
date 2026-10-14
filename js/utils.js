@@ -1,5 +1,7 @@
 const Utils = {
-  // === FORMAT ===
+  version: '2.3',
+
+  // ── Format Helpers ──
   formatTime(seconds) {
     if (seconds < 0) seconds = 0;
     const h = Math.floor(seconds / 3600);
@@ -47,7 +49,7 @@ const Utils = {
     return `${days} hari lalu`;
   },
 
-  // === SECURITY ===
+  // ── Security & Hashing ──
   escapeHtml(str) {
     if (typeof str !== 'string') return str;
     const map = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' };
@@ -57,6 +59,21 @@ const Utils = {
     const arr = new Uint8Array(16);
     crypto.getRandomValues(arr);
     return Array.from(arr, b => b.toString(16).padStart(2,'0')).join('');
+  },
+  validateCSRFToken(token) {
+    const stored = sessionStorage.getItem('csrf');
+    return Boolean(stored && token && stored === token);
+  },
+  async hashPassword(password) {
+    if (!password) return '';
+    try {
+      if (window.crypto && window.crypto.subtle) {
+        const msgUint8 = new TextEncoder().encode(password);
+        const hashBuffer = await window.crypto.subtle.digest('SHA-256', msgUint8);
+        return Array.from(new Uint8Array(hashBuffer), b => b.toString(16).padStart(2, '0')).join('');
+      }
+    } catch (e) {}
+    return password;
   },
   sanitizeInput(input) {
     if (typeof input !== 'string') return input;

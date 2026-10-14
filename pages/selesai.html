@@ -40,7 +40,7 @@ let nilaiLabel = '';
 
   ujian = DB.getUjianById(hasil.ujianId);
   if (!ujian && DB.client) {
-    ujian = await DB.getUjianById(hasil.ujianId);
+    ujian = await DB.fetchUjianById(hasil.ujianId);
   }
 
   isDitangguhkan = hasil.status === 'ditangguhkan';

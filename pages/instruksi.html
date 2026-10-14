@@ -27,7 +27,7 @@ let countdownInterval;
 (async () => {
   ujian = DB.getUjianById(ujianId);
   if (!ujian && DB.client) {
-    ujian = await DB.getUjianById(ujianId);
+    ujian = await DB.fetchUjianById(ujianId);
   }
   if (!ujian) {
     alert('Ujian tidak ditemukan atau belum aktif');
@@ -35,10 +35,15 @@ let countdownInterval;
     return;
   }
 
-  // Cek apakah sudah selesai
-  const existingHasil = DB.getHasilBySiswaUjian(session.userId, ujianId);
+  // Cek riwayat dari database cloud untuk mencegah retake
+  const existingHasil = await DB.fetchHasilBySiswaUjian(session.userId, ujianId);
   if (existingHasil && existingHasil.status === 'selesai') {
     window.location.href = `selesai.html?hasilId=${existingHasil.id}`;
+    return;
+  }
+  if (existingHasil && existingHasil.status === 'ditangguhkan') {
+    alert('Ujian ini telah ditangguhkan karena pelanggaran.');
+    window.location.href = 'dashboard-siswa.html';
     return;
   }
 

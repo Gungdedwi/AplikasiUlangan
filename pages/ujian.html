@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Ujian Berlangsung - Ulangan Digital</title>
+  <link rel="stylesheet" href="../css/style.css"/>
+  <style>
+    body { overflow: hidden; user-select: none; }
+    #violation-overlay { display:none; }
+    #suspended-overlay { display:none; }
+    #submit-confirm-overlay { display:none; }
+    .exam-page { height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+    .exam-body { flex:1; overflow: hidden; display: flex; }
+    .exam-main { flex:1; overflow-y: auto; padding: 24px; }
+    .exam-sidebar { width: 220px; overflow-y: auto; flex-shrink: 0; }
+    
+    @media (max-width: 768px) {
+      .exam-sidebar { display: none; }
+      .exam-sidebar.mobile-open { display: block; position: fixed; inset: 0; z-index: 200; width: 280px; height: 100vh; }
+    }
+  </style>
+</head>
+<body>
+<div id="toast-container"></div>
+
+<!-- Offline Network Banner -->
+<div id="offline-banner" style="display:none;background:#FEF3C7;color:#92400E;padding:10px 16px;font-size:13px;font-weight:600;text-align:center;border-bottom:1.5px solid #F59E0B;position:relative;z-index:999;align-items:center;justify-content:center;gap:8px">
+  <span>⚠️</span> Koneksi terputus. Jawaban Anda tetap tersimpan otomatis di penyimpanan lokal.
+</div>
+
+<!-- Enter Fullscreen Initial Overlay -->
+<div class="suspended-overlay" id="enter-fullscreen-overlay" style="display:none;background:rgba(15,23,42,0.95);backdrop-filter:blur(10px);z-index:1000">
+  <div style="background:white;border-radius:var(--radius-xl);padding:36px;max-width:480px;width:100%;text-align:center;box-shadow:var(--shadow-xl)" class="animate-scale-in">
+    <div style="font-size:48px;margin-bottom:12px">🛡️</div>
+    <h2 style="font-family:var(--font-heading);font-size:22px;font-weight:800;color:var(--gray-900);margin-bottom:8px">Masuk Mode Ujian</h2>
+    <p style="font-size:14px;color:var(--gray-600);margin-bottom:24px;line-height:1.5">
+      Aplikasi akan masuk ke mode <strong>Layar Penuh (Fullscreen)</strong>. Selama ujian berlangsung, aktivitas meninggalkan halaman atau berpindah tab akan dicatat sebagai pelanggaran.
+    </p>
+    <button onclick="masukLayarPenuh()" class="btn btn-primary btn-full btn-xl">
+      🖥️ Masuk Layar Penuh & Mulai Ujian
+    </button>
+  </div>
+</div>
+
+<!-- Violation Overlay -->
+<div class="violation-overlay" id="violation-overlay">
+  <div class="violation-card animate-scale-in">
+    <div class="violation-icon">⚠️</div>
+    <div class="violation-title">Pelanggaran Terdeteksi!</div>
+    <div class="violation-msg" id="violation-msg">Terdeteksi aktivitas meninggalkan halaman ujian. Silakan kembali ke ujian.</div>
+    <div class="violation-count" id="violation-count-display">Pelanggaran ke-1</div>
+    <button onclick="kembaliKeUjian()" class="btn btn-primary btn-lg">
+      🔙 Kembali ke Ujian
+    </button>
+  </div>
+</div>
+
+<!-- Suspended Overlay -->
+<div class="suspended-overlay" id="suspended-overlay">
+  <div class="suspended-card">
+    <div class="suspended-icon">🚫</div>
+    <h2 class="suspended-title">Ujian Ditangguhkan</h2>
+    <p class="suspended-msg">
+      Anda telah melampaui batas pelanggaran yang diizinkan.<br/>
+      Ujian Anda telah dihentikan sementara.<br/><br/>
+      <strong>Silakan hubungi guru untuk verifikasi dan tindak lanjut.</strong>
+    </p>
+    <div style="background:rgba(255,255,255,0.1);border-radius:var(--radius);padding:16px;margin-bottom:24px;font-size:13px">
+      <div>Nama: <strong id="suspended-name"></strong></div>
+      <div>Ujian: <strong id="suspended-ujian"></strong></div>
+      <div>Waktu: <strong id="suspended-time"></strong></div>
+    </div>
+    <button onclick="window.location.href='dashboard-siswa.html'" class="btn btn-secondary">
+      🚪 Keluar ke Beranda
+    </button>
+  </div>
+</div>
+
+<!-- Submit Confirmation Overlay -->
+<div class="suspended-overlay" id="submit-confirm-overlay" style="background:rgba(0,0,0,0.7);backdrop-filter:blur(8px)">
+  <div style="background:white;border-radius:var(--radius-xl);padding:36px;max-width:480px;width:100%;text-align:center">
+    <div style="font-size:48px;margin-bottom:16px">📬</div>
+    <h2 style="font-family:var(--font-heading);font-size:22px;font-weight:800;margin-bottom:8px;color:var(--gray-900)">Kirim Jawaban?</h2>
+    <p style="font-size:14px;color:var(--gray-600);margin-bottom:20px">Pastikan semua jawaban sudah terisi dengan benar. Setelah dikirim, Anda tidak dapat mengubah jawaban.</p>
+    <div id="submit-summary" style="background:var(--gray-50);border-radius:var(--radius);padding:16px;margin-bottom:24px;display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:14px"></div>
+    <div style="display:flex;gap:10px">
+      <button onclick="batalSubmit()" class="btn btn-secondary" style="flex:1">← Kembali ke Soal</button>
+      <button onclick="konfirmasiSubmit()" class="btn btn-primary" style="flex:1">✅ Ya, Kirim Sekarang</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../js/storage.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/exam.js"></script>
+<script>
+DB.init();
+Auth.init();
+const session = Auth.requireRole('siswa', '../index.html');
+if (!session) throw new Error('Unauthorized');
+
+const ujianId = new URLSearchParams(window.location.search).get('ujianId');
+if (!ujianId) { window.location.href = 'dashboard-siswa.html'; throw new Error('No ujianId'); }
+
+// State UI
+let hasilData = null;
+let ujian = null;
+let violationDetectionStarted = false;
+
+function activateExamMode() {
+  if (!violationDetectionStarted) {
+    ExamEngine.setupViolationDetection(onViolation, onSuspended);
+    violationDetectionStarted = true;
+  }
+}
+
+async function masukLayarPenuh() {
+  try {
+    await Utils.requestFullscreen();
+  } catch (e) {
+    console.warn('Fullscreen request:', e);
+  }
+  document.getElementById('enter-fullscreen-overlay').style.display = 'none';
+  activateExamMode();
+}
+
+// INIT EXAM ENGINE & UI
+(async () => {
+  ujian = DB.getUjianById(ujianId);
+  if (!ujian && DB.client) {
+    ujian = await DB.fetchUjianById(ujianId);
+  }
+  if (!ujian) {
+    alert('Ujian tidak ditemukan atau belum aktif');
+    window.location.href = 'dashboard-siswa.html';
+    return;
+  }
+
+  // Cek riwayat pengerjaan dari database cloud untuk mencegah retake/duplikasi
+  const existingHasil = await DB.fetchHasilBySiswaUjian(session.userId, ujianId);
+  if (existingHasil && existingHasil.status === 'selesai') {
+    window.location.href = `selesai.html?hasilId=${existingHasil.id}`;
+    return;
+  }
+  if (existingHasil && existingHasil.status === 'ditangguhkan') {
+    alert('Ujian ini telah ditangguhkan karena melebihi batas pelanggaran.');
+    window.location.href = 'dashboard-siswa.html';
+    return;
+  }
+
+  // Build UI
+  document.body.insertAdjacentHTML('beforeend', `
+  <div class="exam-page" id="exam-page">
+    <!-- Topbar -->
+    <div class="exam-topbar">
+      <div style="display:flex;align-items:center;gap:12px">
+        <button onclick="toggleMobileNav()" style="background:none;border:none;color:white;font-size:20px;cursor:pointer;display:none" id="btn-mobile-nav">☰</button>
+        <div>
+          <div class="exam-title">${Utils.escapeHtml(ujian.judul)}</div>
+          <div style="font-size:11px;opacity:0.7">${Utils.escapeHtml(session.name)} • ${Utils.escapeHtml(ujian.mapel||'-')}</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <!-- Autosave indicator -->
+        <div id="autosave-indicator" style="font-size:12px;opacity:0.8;display:none">☁️ Tersimpan di Cloud</div>
+        <!-- Timer -->
+        <div class="exam-timer" id="exam-timer">
+          <span>⏱️</span>
+          <span id="timer-display">--:--</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="exam-body">
+      <!-- Sidebar navigasi soal -->
+      <div class="exam-sidebar" id="exam-sidebar">
+        <div style="padding:12px 0;border-bottom:1px solid var(--gray-200);margin-bottom:12px">
+          <div style="font-size:12px;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:0.5px">Navigasi Soal</div>
+          <div style="font-size:11px;color:var(--gray-400);margin-top:4px" id="answered-progress">0 / 0 dijawab</div>
+        </div>
+        <div class="question-nav-grid" id="question-nav"></div>
+        <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--gray-200)">
+          <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--gray-500);margin-bottom:4px"><span style="width:14px;height:14px;background:var(--success);border-radius:3px;display:inline-block"></span>Dijawab</div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--gray-500);margin-bottom:4px"><span style="width:14px;height:14px;background:var(--primary);border-radius:3px;display:inline-block"></span>Saat ini</div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--gray-500)"><span style="width:14px;height:14px;background:var(--warning);border-radius:3px;display:inline-block"></span>Ditandai</div>
+        </div>
+        <div style="margin-top:16px">
+          <button onclick="showSubmitConfirm()" class="btn btn-danger btn-full btn-sm">📬 Kirim Ujian</button>
+        </div>
+      </div>
+
+      <!-- Main exam area -->
+      <div class="exam-main" id="exam-main-area">
+        <div style="display:flex;align-items:center;justify-content:center;height:200px">
+          <div class="spinner"></div>
+        </div>
+      </div>
+    </div>
+  </div>`);
+
+  hasilData = await ExamEngine.init(ujian, session);
+  renderCurrentQuestion();
+  renderQuestionNav();
+
+  // Start timer
+  ExamEngine.startTimer(onTimerTick, onTimerEnd);
+  
+  // Start autosave
+  const settings = DB.getSettings();
+  ExamEngine.startAutosave(settings.autosaveInterval || 30);
+  
+  // Deteksi Fullscreen
+  const requireFs = settings.requireFullscreen !== false;
+  if (requireFs && !Utils.isFullscreen()) {
+    document.getElementById('enter-fullscreen-overlay').style.display = 'flex';
+  } else {
+    activateExamMode();
+  }
+  
+  // Init timer display
+  updateTimerDisplay(ExamEngine.state.timerSeconds);
+  
+  // Show autosave indicator periodically
+  setInterval(() => {
+    const el = document.getElementById('autosave-indicator');
+    if (el) {
+      el.style.display = 'block';
+      setTimeout(() => { if(el) el.style.display = 'none'; }, 2000);
+    }
+  }, 30000);
+
+  // Network connection listeners (Offline recovery)
+  window.addEventListener('offline', () => {
+    const banner = document.getElementById('offline-banner');
+    if (banner) banner.style.display = 'flex';
+    Utils.toast('⚠️ Koneksi terputus. Jawaban tetap tersimpan di perangkat lokal.', 'warning', 4000);
+  });
+
+  window.addEventListener('online', () => {
+    const banner = document.getElementById('offline-banner');
+    if (banner) banner.style.display = 'none';
+    Utils.toast('✅ Koneksi kembali terhubung. Sinkronisasi berhasil.', 'success', 3000);
+    ExamEngine._autosave();
+  });
+})();
+
+// === TIMER ===
+function onTimerTick(seconds) { updateTimerDisplay(seconds); }
+
+function onTimerEnd() {
+  Utils.toast('⏰ Waktu habis! Jawaban otomatis dikirim.', 'warning', 5000);
+  setTimeout(() => submitUjian('timeout'), 2000);
+}
+
+function updateTimerDisplay(seconds) {
+  const el = document.getElementById('timer-display');
+  const timer = document.getElementById('exam-timer');
+  if (!el) return;
+  el.textContent = Utils.formatTime(seconds);
+  
+  if (seconds <= 300 && seconds > 60) { // 5 menit warning
+    timer?.classList.add('warning');
+  } else if (seconds <= 60) { // 1 menit danger
+    timer?.classList.remove('warning');
+    timer?.classList.add('danger');
+  }
+}
+
+// === VIOLATION HANDLERS ===
+function onViolation(result, message) {
+  const overlay = document.getElementById('violation-overlay');
+  const msgEl = document.getElementById('violation-msg');
+  const countEl = document.getElementById('violation-count-display');
+  if (!overlay) return;
+  
+  if (msgEl) msgEl.textContent = message;
+  if (countEl) countEl.textContent = `Pelanggaran ke-${result.count} dari ${result.max}`;
+  overlay.style.display = 'flex';
+  ExamEngine.state.violationOverlayShown = true;
+}
+
+function onSuspended() {
+  ExamEngine.submit('suspended');
+  const suspOverlay = document.getElementById('suspended-overlay');
+  if (suspOverlay) {
+    document.getElementById('suspended-name').textContent = session.name;
+    document.getElementById('suspended-ujian').textContent = ujian.judul;
+    document.getElementById('suspended-time').textContent = new Date().toLocaleString('id-ID');
+    suspOverlay.style.display = 'flex';
+  }
+}
+
+function kembaliKeUjian() {
+  const overlay = document.getElementById('violation-overlay');
+  if (overlay) overlay.style.display = 'none';
+  ExamEngine.state.violationOverlayShown = false;
+  
+  // Coba re-enter fullscreen
+  Utils.requestFullscreen().catch(() => {});
+}
+
+// === RENDER QUESTION ===
+function renderCurrentQuestion() {
+  const { soalList, currentIndex } = ExamEngine.state;
+  if (soalList.length === 0) return;
+  
+  const soal = soalList[currentIndex];
+  if (!soal) return;
+  
+  const mainArea = document.getElementById('exam-main-area');
+  if (!mainArea) return;
+  
+  const isFlagged = ExamEngine.isFlagged(soal.id);
+  const currentAnswer = ExamEngine.state.answers[soal.id];
+  
+  let answerHTML = '';
+  
+  if (soal.tipe === 'pg') {
+    const labels = ['A','B','C','D','E'];
+    const pilihan = soal.pilihan || [];
+    answerHTML = `
+    <div class="option-list">
+      ${pilihan.map((p,i) => {
+        const key = labels[i];
+        const isSelected = currentAnswer === key;
+        return `
+        <div class="option-item ${isSelected?'selected':''}" onclick="pilihJawaban('${soal.id}','${key}',this)">
+          <div class="option-key">${key}</div>
+          <div class="option-text">${Utils.escapeHtml(p)}</div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  } else if (soal.tipe === 'bs') {
+    answerHTML = `
+    <div class="option-list">
+      <div class="option-item ${currentAnswer==='Benar'?'selected':''}" onclick="pilihJawaban('${soal.id}','Benar',this)">
+        <div class="option-key">✅</div>
+        <div class="option-text" style="font-weight:600">BENAR</div>
+      </div>
+      <div class="option-item ${currentAnswer==='Salah'?'selected':''}" onclick="pilihJawaban('${soal.id}','Salah',this)">
+        <div class="option-key">❌</div>
+        <div class="option-text" style="font-weight:600">SALAH</div>
+      </div>
+    </div>`;
+  } else if (soal.tipe === 'isian') {
+    answerHTML = `
+    <div>
+      <label style="font-size:13px;font-weight:600;color:var(--gray-600);margin-bottom:8px;display:block">Ketik jawaban Anda:</label>
+      <input type="text" 
+        id="answer-isian" 
+        class="form-control" 
+        placeholder="Ketik jawaban singkat..." 
+        value="${Utils.escapeHtml(currentAnswer||'')}"
+        oninput="saveIsianAnswer('${soal.id}',this.value)"
+        style="font-size:16px;padding:14px;border:2px solid var(--gray-200)"
+        maxlength="500"
+        autocomplete="off"
+        autocorrect="off"
+        spellcheck="false"
+      />
+    </div>`;
+  } else if (soal.tipe === 'uraian') {
+    answerHTML = `
+    <div>
+      <label style="font-size:13px;font-weight:600;color:var(--gray-600);margin-bottom:8px;display:block">Tulis jawaban Anda secara lengkap:</label>
+      <textarea 
+        id="answer-uraian"
+        class="essay-input"
+        placeholder="Tulis jawaban uraian di sini..."
+        oninput="saveUraianAnswer('${soal.id}',this.value);updateCharCount(this)"
+        maxlength="5000"
+      >${Utils.escapeHtml(currentAnswer||'')}</textarea>
+      <div class="char-count" id="char-count-uraian">${(currentAnswer||'').length}/5000</div>
+    </div>`;
+  }
+
+  mainArea.innerHTML = `
+  <div style="max-width:800px;margin:0 auto">
+    <!-- Question Card -->
+    <div class="question-card">
+      <div class="question-number">
+        <div>Soal ${currentIndex + 1} dari ${soalList.length}</div>
+        <div style="display:flex;gap:8px">
+          <span class="badge badge-gray">${soal.tipe==='pg'?'Pilihan Ganda':soal.tipe==='bs'?'Benar/Salah':soal.tipe==='isian'?'Isian':'Uraian'}</span>
+          <span class="badge badge-primary">Bobot: ${soal.bobot||1}</span>
+          <button onclick="toggleFlag('${soal.id}')" style="background:none;border:none;cursor:pointer;font-size:18px" title="Tandai soal">${isFlagged?'🚩':'🏳️'}</button>
+        </div>
+      </div>
+      <div class="question-text">${Utils.escapeHtml(soal.pertanyaan)}</div>
+      ${answerHTML}
+    </div>
+
+    <!-- Navigation Buttons -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
+      <button onclick="goToPrev()" class="btn btn-secondary" ${currentIndex===0?'disabled':''}>
+        ← Sebelumnya
+      </button>
+      <div style="font-size:13px;color:var(--gray-500)" id="answered-text">
+        Dijawab: <strong id="answered-count">${ExamEngine.getAnsweredCount()}</strong> / ${soalList.length}
+      </div>
+      ${currentIndex === soalList.length - 1 ? `
+        <button onclick="showSubmitConfirm()" class="btn btn-danger">
+          📬 Kirim Ujian
+        </button>
+      ` : `
+        <button onclick="goToNext()" class="btn btn-primary">
+          Selanjutnya →
+        </button>
+      `}
+    </div>
+  </div>`;
+
+  // Update nav
+  renderQuestionNav();
+}
+
+function renderQuestionNav() {
+  const { soalList, currentIndex } = ExamEngine.state;
+  const navEl = document.getElementById('question-nav');
+  const progressEl = document.getElementById('answered-progress');
+  if (!navEl) return;
+  
+  const answered = ExamEngine.getAnsweredCount();
+  if (progressEl) progressEl.textContent = `${answered} / ${soalList.length} dijawab`;
+  
+  navEl.innerHTML = soalList.map((s,i) => {
+    const isAnswered = ExamEngine.isAnswered(s.id);
+    const isCurrent = i === currentIndex;
+    const isFlagged = ExamEngine.isFlagged(s.id);
+    let cls = 'question-nav-btn';
+    if (isCurrent) cls += ' current';
+    else if (isFlagged) cls += ' flagged';
+    else if (isAnswered) cls += ' answered';
+    return `<button class="${cls}" onclick="goToQuestion(${i})">${i+1}</button>`;
+  }).join('');
+}
+
+// === ANSWER HANDLERS ===
+function pilihJawaban(soalId, value, el) {
+  ExamEngine.setAnswer(soalId, value);
+  // Update UI
+  const list = el.closest('.option-list');
+  list?.querySelectorAll('.option-item').forEach(item => item.classList.remove('selected'));
+  el.classList.add('selected');
+  el.querySelector('.option-key')?.classList.add('selected-key');
+  
+  const countEl = document.getElementById('answered-count');
+  if (countEl) countEl.textContent = ExamEngine.getAnsweredCount();
+  renderQuestionNav();
+}
+
+let isianTimeout;
+function saveIsianAnswer(soalId, value) {
+  clearTimeout(isianTimeout);
+  isianTimeout = setTimeout(() => {
+    ExamEngine.setAnswer(soalId, value);
+    const countEl = document.getElementById('answered-count');
+    if (countEl) countEl.textContent = ExamEngine.getAnsweredCount();
+    renderQuestionNav();
+  }, 500);
+}
+
+let uraianTimeout;
+function saveUraianAnswer(soalId, value) {
+  clearTimeout(uraianTimeout);
+  uraianTimeout = setTimeout(() => {
+    ExamEngine.setAnswer(soalId, value);
+    const countEl = document.getElementById('answered-count');
+    if (countEl) countEl.textContent = ExamEngine.getAnsweredCount();
+    renderQuestionNav();
+  }, 500);
+}
+
+function updateCharCount(el) {
+  const countEl = document.getElementById('char-count-uraian');
+  if (countEl) countEl.textContent = `${el.value.length}/5000`;
+}
+
+function toggleFlag(soalId) {
+  ExamEngine.toggleFlag(soalId);
+  renderCurrentQuestion();
+}
+
+// === NAVIGATION ===
+function goToNext() {
+  const { soalList, currentIndex } = ExamEngine.state;
+  if (currentIndex < soalList.length - 1) {
+    ExamEngine.state.currentIndex++;
+    renderCurrentQuestion();
+    scrollToTop();
+  }
+}
+
+function goToPrev() {
+  if (ExamEngine.state.currentIndex > 0) {
+    ExamEngine.state.currentIndex--;
+    renderCurrentQuestion();
+    scrollToTop();
+  }
+}
+
+function goToQuestion(idx) {
+  ExamEngine.state.currentIndex = idx;
+  renderCurrentQuestion();
+  scrollToTop();
+  // Close mobile sidebar
+  const sidebar = document.getElementById('exam-sidebar');
+  if (sidebar) sidebar.classList.remove('mobile-open');
+}
+
+function scrollToTop() {
+  const mainArea = document.getElementById('exam-main-area');
+  if (mainArea) mainArea.scrollTop = 0;
+}
+
+function toggleMobileNav() {
+  const sidebar = document.getElementById('exam-sidebar');
+  if (sidebar) sidebar.classList.toggle('mobile-open');
+}
+
+// === SUBMIT ===
+function showSubmitConfirm() {
+  const { soalList } = ExamEngine.state;
+  const answered = ExamEngine.getAnsweredCount();
+  const flagged = ExamEngine.state.flagged.length;
+  const unanswered = soalList.length - answered;
+  
+  const summaryEl = document.getElementById('submit-summary');
+  if (summaryEl) {
+    summaryEl.innerHTML = `
+      <div style="text-align:center;padding:8px"><div style="font-size:20px;font-weight:700;color:var(--success)">${answered}</div><div style="font-size:11px;color:var(--gray-400)">Dijawab</div></div>
+      <div style="text-align:center;padding:8px"><div style="font-size:20px;font-weight:700;color:${unanswered>0?'var(--danger)':'var(--gray-400)'}">${unanswered}</div><div style="font-size:11px;color:var(--gray-400)">Belum Dijawab</div></div>
+      <div style="text-align:center;padding:8px"><div style="font-size:20px;font-weight:700;color:var(--warning)">${flagged}</div><div style="font-size:11px;color:var(--gray-400)">Ditandai</div></div>
+      <div style="text-align:center;padding:8px"><div style="font-size:20px;font-weight:700;color:var(--primary)">${soalList.length}</div><div style="font-size:11px;color:var(--gray-400)">Total Soal</div></div>`;
+  }
+  
+  document.getElementById('submit-confirm-overlay').style.display = 'flex';
+}
+
+function batalSubmit() {
+  document.getElementById('submit-confirm-overlay').style.display = 'none';
+}
+
+function konfirmasiSubmit() {
+  submitUjian('manual');
+}
+
+async function submitUjian(reason) {
+  document.getElementById('submit-confirm-overlay').style.display = 'none';
+  Utils.toast('☁️ Menyimpan hasil ke database cloud...', 'info', 1500);
+  const result = await ExamEngine.submit(reason);
+  ExamEngine.cleanup();
+  if (result) {
+    Utils.toast('✅ Ujian berhasil dikumpulkan!', 'success', 2000);
+    setTimeout(() => {
+      window.location.href = `selesai.html?hasilId=${result.hasilId}`;
+    }, 1200);
+  }
+}
+</script>
+</body>
+</html>

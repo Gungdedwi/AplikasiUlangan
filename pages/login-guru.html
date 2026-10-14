@@ -73,14 +73,13 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../js/storage.js?v=2.2"></script>
-<script src="../js/utils.js?v=2.2"></script>
-<script src="../js/auth.js?v=2.2"></script>
+<script src="../js/storage.js?v=2.3"></script>
+<script src="../js/utils.js?v=2.3"></script>
+<script src="../js/auth.js?v=2.3"></script>
 <script>
   // Inisialisasi
   DB.init();
   Auth.init();
-  DB.seed();
 
   // Redirect jika sudah memiliki sesi aktif
   const session = Auth.getSession();
@@ -125,22 +124,25 @@
 
     setLoading(true);
 
-    // UX smoothing
-    await new Promise(r => setTimeout(r, 500));
+    try {
+      const result = await Auth.login(username, password, ['guru', 'admin']);
 
-    const result = await Auth.login(username, password, ['guru', 'admin']);
-    setLoading(false);
+      if (!result.success) {
+        showError(result.error);
+        document.getElementById('staff-password').value = '';
+        return;
+      }
 
-    if (!result.success) {
-      showError(result.error);
-      document.getElementById('staff-password').value = '';
-      return;
+      Utils.toast(`Selamat datang, ${result.user.name}!`, 'success');
+      setTimeout(() => {
+        window.location.href = 'dashboard-guru.html';
+      }, 300);
+    } catch (err) {
+      console.error('Login staff error:', err);
+      showError('Gagal masuk ke sistem: ' + (err.message || 'Silakan periksa koneksi Anda.'));
+    } finally {
+      setLoading(false);
     }
-
-    Utils.toast(`Selamat datang, ${result.user.name}!`, 'success');
-    setTimeout(() => {
-      window.location.href = 'dashboard-guru.html';
-    }, 400);
   }
 </script>
 </body>
