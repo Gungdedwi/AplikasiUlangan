@@ -112,6 +112,8 @@ const Auth = {
       name: authUser.name,
       role: authUser.role,
       kelas: authUser.kelas || '',
+      mapel: authUser.mapel || '',
+      kelasAmpu: authUser.kelasAmpu || authUser.kelas_ampu || '',
       email: authUser.email || '',
       token: Utils.generateCSRFToken(),
       loginAt: Date.now()
@@ -163,6 +165,14 @@ const Auth = {
 
   getSession() {
     return DB.getSession();
+  },
+
+  updateSession(newData) {
+    const current = this.getSession();
+    if (!current) return null;
+    const updated = { ...current, ...newData };
+    DB.setSession(updated);
+    return updated;
   },
 
   requireAuth(redirectTo = 'index.html') {

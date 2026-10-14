@@ -114,13 +114,15 @@ const DB = {
       kelas: u.kelas || '',
       no_absen: u.no_absen || '',
       noAbsen: u.no_absen || '',
+      mapel: u.mapel || '',
+      kelasAmpu: u.kelas_ampu || u.kelasAmpu || '',
       active: u.active !== false,
       createdAt: u.created_at ? new Date(u.created_at).getTime() : Date.now()
     };
   },
 
   _toSnakeUser(u) {
-    return {
+    const row = {
       id: u.id,
       username: u.username,
       password: u.password,
@@ -131,6 +133,11 @@ const DB = {
       no_absen: u.noAbsen || u.no_absen || null,
       active: u.active !== false
     };
+    if (u.mapel !== undefined) row.mapel = u.mapel || null;
+    if (u.kelasAmpu !== undefined || u.kelas_ampu !== undefined) {
+      row.kelas_ampu = u.kelasAmpu || u.kelas_ampu || null;
+    }
+    return row;
   },
 
   _toCamelSoal(s) {
@@ -470,7 +477,13 @@ const DB = {
 
     if (this.client) {
       try {
-        await this.client.from('users').upsert([this._toSnakeUser(user)], { onConflict: 'id' });
+        const row = this._toSnakeUser(user);
+        const { error } = await this.client.from('users').upsert([row], { onConflict: 'id' });
+        if (error && (error.message?.includes('mapel') || error.message?.includes('kelas_ampu'))) {
+          delete row.mapel;
+          delete row.kelas_ampu;
+          await this.client.from('users').upsert([row], { onConflict: 'id' });
+        }
       } catch (e) {
         console.error('Supabase addUser error:', e);
       }
@@ -543,11 +556,42 @@ const DB = {
 
     if (this.client) {
       try {
-        await this.client.from('users').update(this._toSnakeUser({ id, ...updateData })).eq('id', id);
+        const row = this._toSnakeUser({ id, ...updateData });
+        const { error } = await this.client.from('users').update(row).eq('id', id);
+        if (error && (error.message?.includes('mapel') || error.message?.includes('kelas_ampu'))) {
+          delete row.mapel;
+          delete row.kelas_ampu;
+          await this.client.from('users').update(row).eq('id', id);
+        }
       } catch (e) {
         console.error('Supabase updateUser error:', e);
       }
     }
+  },
+
+  // ── Helper Filter Guru (Mapel & Kelas Ampuan) ──
+  getGuruMapels(userOrSession) {
+    if (!userOrSession || !userOrSession.mapel) return [];
+    return userOrSession.mapel.split(',').map(m => m.trim()).filter(Boolean);
+  },
+
+  getGuruKelas(userOrSession) {
+    if (!userOrSession || !userOrSession.kelasAmpu) return [];
+    return userOrSession.kelasAmpu.split(',').map(k => k.trim()).filter(Boolean);
+  },
+
+  isGuruMatch(userOrSession, mapel, kelas) {
+    if (!userOrSession) return false;
+    if (userOrSession.role === 'admin') return true;
+    if (userOrSession.role !== 'guru') return false;
+
+    const teacherMapels = this.getGuruMapels(userOrSession).map(m => m.toLowerCase());
+    const teacherKelas = this.getGuruKelas(userOrSession).map(k => k.toLowerCase());
+
+    const mapelMatch = teacherMapels.length === 0 || (mapel && teacherMapels.includes(mapel.trim().toLowerCase()));
+    const kelasMatch = teacherKelas.length === 0 || !kelas || teacherKelas.includes(kelas.trim().toLowerCase());
+
+    return mapelMatch && kelasMatch;
   },
 
   async deleteUser(id) {

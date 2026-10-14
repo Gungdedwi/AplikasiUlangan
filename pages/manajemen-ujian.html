@@ -40,16 +40,31 @@ window.addEventListener('supabase-synced', () => {
   if (session) renderManajemenUjian();
 });
 
+const myMapels = DB.getGuruMapels(session);
+const myKelas = DB.getGuruKelas(session);
+
+function getTeacherUjian() {
+  return DB.getUjian().filter(u => {
+    if (!u) return false;
+    if (session.role === 'admin') return true;
+    return DB.isGuruMatch(session, u.mapel, u.kelas) || u.guruId === session.userId;
+  });
+}
+
 function renderManajemenUjian() {
   Layout.setPageTitle('Manajemen Ujian');
-  const ujianList = DB.getUjian().filter(u => Boolean(u) && (!u.guruId || u.guruId === session.userId || session.role === 'admin' || session.role === 'guru'));
+  const ujianList = getTeacherUjian();
 
   const content = `
   <div class="animate-fade-in">
     <div class="flex items-center justify-between mb-6">
       <div>
         <h1 class="page-title">Manajemen Ujian</h1>
-        <p class="page-subtitle">Buat dan kelola ujian untuk siswa</p>
+        <p class="page-subtitle">
+          ${session.role === 'guru'
+            ? `Mapel: <strong style="color:var(--primary)">${myMapels.join(', ') || 'Semua'}</strong> • Kelas Ampuan: <strong>${myKelas.join(', ') || 'Semua'}</strong>`
+            : 'Buat dan kelola seluruh jadwal ujian (Akses Administrator)'}
+        </p>
       </div>
       <button onclick="openUjianModal()" class="btn btn-primary">➕ Buat Ujian Baru</button>
     </div>
@@ -88,7 +103,7 @@ function renderManajemenUjian() {
 }
 
 function renderUjianList() {
-  const ujianList = DB.getUjian().filter(u => Boolean(u) && (!u.guruId || u.guruId === session.userId || session.role === 'admin' || session.role === 'guru')).sort((a,b) => b.createdAt - a.createdAt);
+  const ujianList = getTeacherUjian().sort((a,b) => b.createdAt - a.createdAt);
   const container = document.getElementById('ujian-list-container');
   if (!container) return;
 
@@ -184,7 +199,11 @@ function renderUjianList() {
 function openUjianModal(id = null) {
   editingUjianId = id;
   const ujian = id ? DB.getUjianById(id) : null;
-  const soalList = DB.getSoal().filter(s => Boolean(s) && (!s.pembuatId || s.pembuatId === session.userId || session.role === 'admin' || session.role === 'guru'));
+  const soalList = DB.getSoal().filter(s => {
+    if (!s) return false;
+    if (session.role === 'admin') return true;
+    return DB.isGuruMatch(session, s.mapel, s.kelas) || s.pembuatId === session.userId;
+  });
   document.getElementById('modal-ujian-title').textContent = id ? 'Edit Ujian' : 'Buat Ujian Baru';
   document.getElementById('modal-ujian-body').innerHTML = buildUjianForm(ujian, soalList);
   document.getElementById('modal-ujian').style.display = 'flex';
@@ -202,6 +221,8 @@ function buildUjianForm(ujian, soalList) {
   const endStr = new Date(now.getTime() - now.getTimezoneOffset() * 60000 + 7200000).toISOString().slice(0,16);
 
   const tipeBadge = {pg:'PG', bs:'B/S', isian:'Isian', uraian:'Uraian'};
+  const defaultMapel = ujian?.mapel || (myMapels[0] || '');
+  const defaultKelas = ujian?.kelas || (myKelas[0] || '');
   
   return `
   <form onsubmit="saveUjian(event)" novalidate>
@@ -213,11 +234,19 @@ function buildUjianForm(ujian, soalList) {
       </div>
       <div class="form-group">
         <label class="form-label">Mata Pelajaran <span class="required">*</span></label>
-        <input type="text" id="u-mapel" class="form-control" value="${Utils.escapeHtml(ujian?.mapel||'')}" placeholder="e.g. Matematika" maxlength="100"/>
+        ${myMapels.length > 0 ? `
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">
+          ${myMapels.map(m => `<button type="button" class="btn btn-ghost btn-xs" style="border:1px solid var(--gray-300);padding:1px 6px;font-size:10px" onclick="document.getElementById('u-mapel').value='${m}'">${m}</button>`).join('')}
+        </div>` : ''}
+        <input type="text" id="u-mapel" class="form-control" value="${Utils.escapeHtml(defaultMapel)}" placeholder="e.g. Matematika" maxlength="100"/>
       </div>
       <div class="form-group">
         <label class="form-label">Kelas</label>
-        <input type="text" id="u-kelas" class="form-control" value="${Utils.escapeHtml(ujian?.kelas||'')}" placeholder="e.g. XI IPA 1" maxlength="100"/>
+        ${myKelas.length > 0 ? `
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">
+          ${myKelas.map(k => `<button type="button" class="btn btn-ghost btn-xs" style="border:1px solid var(--gray-300);padding:1px 6px;font-size:10px" onclick="document.getElementById('u-kelas').value='${k}'">${k}</button>`).join('')}
+        </div>` : ''}
+        <input type="text" id="u-kelas" class="form-control" value="${Utils.escapeHtml(defaultKelas)}" placeholder="e.g. XI IPA 1" maxlength="100"/>
       </div>
     </div>
 

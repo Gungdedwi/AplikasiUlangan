@@ -17,8 +17,12 @@ DB.init();
 Auth.init();
 const session = Layout.initStaff('bank-soal', ['guru', 'admin']);
 
+const myMapels = DB.getGuruMapels(session);
+const myKelas = DB.getGuruKelas(session);
+
 let filterTipe = 'semua';
-let filterMapel = 'semua';
+let filterMapel = (session.role === 'guru' && myMapels.length > 0) ? myMapels[0] : 'semua';
+let filterKelas = 'semua';
 let searchQuery = '';
 let editingSoalId = null;
 
@@ -46,14 +50,21 @@ window.addEventListener('supabase-synced', () => {
 
 function renderBankSoal() {
   Layout.setPageTitle('Bank Soal');
-  const mapels = [...new Set(DB.getSoal().map(s => s.mapel).filter(Boolean))];
+  const allSoal = DB.getSoal();
+  // Kumpulkan daftar mapel dan kelas dari bank soal & profil guru
+  const availableMapels = [...new Set([...myMapels, ...allSoal.map(s => s.mapel).filter(Boolean)])];
+  const availableKelas = [...new Set([...myKelas, ...allSoal.map(s => s.kelas).filter(Boolean)])];
 
   const content = `
   <div class="animate-fade-in">
     <div class="flex items-center justify-between mb-6">
       <div>
         <h1 class="page-title">Bank Soal</h1>
-        <p class="page-subtitle">Kelola kumpulan soal untuk ujian</p>
+        <p class="page-subtitle">
+          ${session.role === 'guru'
+            ? `Mapel Anda: <strong style="color:var(--primary)">${myMapels.join(', ') || 'Semua'}</strong> • Kelas: <strong>${myKelas.join(', ') || 'Semua'}</strong>`
+            : 'Kelola kumpulan soal untuk ujian (Akses Administrator)'}
+        </p>
       </div>
       <button onclick="openSoalModal()" class="btn btn-primary">➕ Tambah Soal</button>
     </div>
@@ -63,12 +74,26 @@ function renderBankSoal() {
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
         <div class="input-wrapper" style="flex:1;min-width:200px">
           <span class="input-icon">🔍</span>
-          <input type="text" id="search-soal" class="form-control" placeholder="Cari soal..." oninput="searchQuery=this.value;renderSoalList()"/>
+          <input type="text" id="search-soal" class="form-control" placeholder="Cari pertanyaan, bab..." oninput="searchQuery=this.value;renderSoalList()"/>
         </div>
-        <select class="form-control" style="width:auto" onchange="filterMapel=this.value;renderSoalList()">
-          <option value="semua">Semua Mapel</option>
-          ${mapels.map(m => `<option value="${Utils.escapeHtml(m)}">${Utils.escapeHtml(m)}</option>`).join('')}
-        </select>
+        <div>
+          <select class="form-control" style="width:auto;min-width:160px" onchange="filterMapel=this.value;renderSoalList()">
+            <option value="semua" ${filterMapel==='semua'?'selected':''}>Semua Mapel</option>
+            ${availableMapels.map(m => {
+              const isMine = myMapels.some(item => item.toLowerCase() === m.toLowerCase());
+              return `<option value="${Utils.escapeHtml(m)}" ${filterMapel.toLowerCase()===m.toLowerCase()?'selected':''}>${isMine ? '★ ' : ''}${Utils.escapeHtml(m)}</option>`;
+            }).join('')}
+          </select>
+        </div>
+        <div>
+          <select class="form-control" style="width:auto;min-width:130px" onchange="filterKelas=this.value;renderSoalList()">
+            <option value="semua" ${filterKelas==='semua'?'selected':''}>Semua Kelas</option>
+            ${availableKelas.map(k => {
+              const isMine = myKelas.some(item => item.toLowerCase() === k.toLowerCase());
+              return `<option value="${Utils.escapeHtml(k)}" ${filterKelas.toLowerCase()===k.toLowerCase()?'selected':''}>${isMine ? '★ ' : ''}Kelas ${Utils.escapeHtml(k)}</option>`;
+            }).join('')}
+          </select>
+        </div>
       </div>
       <div class="question-type-tabs mt-4">
         ${[
@@ -101,9 +126,16 @@ function renderBankSoal() {
 }
 
 function renderSoalList() {
-  let list = DB.getSoal().filter(s => Boolean(s) && (!s.pembuatId || s.pembuatId === session.userId || session.role === 'guru' || session.role === 'admin'));
+  let list = DB.getSoal().filter(s => {
+    if (!s) return false;
+    if (session.role === 'admin') return true;
+    // Guru hanya melihat soal mapel & kelas ampuan atau buatannya
+    return DB.isGuruMatch(session, s.mapel, s.kelas) || s.pembuatId === session.userId;
+  });
+
   if (filterTipe !== 'semua') list = list.filter(s => s.tipe === filterTipe);
-  if (filterMapel !== 'semua') list = list.filter(s => s.mapel === filterMapel);
+  if (filterMapel !== 'semua') list = list.filter(s => (s.mapel || '').toLowerCase() === filterMapel.toLowerCase());
+  if (filterKelas !== 'semua') list = list.filter(s => (s.kelas || '').toLowerCase().includes(filterKelas.toLowerCase()));
   if (searchQuery.trim()) {
     const q = searchQuery.toLowerCase();
     list = list.filter(s => s.pertanyaan?.toLowerCase().includes(q) || s.bab?.toLowerCase().includes(q));
@@ -116,8 +148,8 @@ function renderSoalList() {
     container.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">📭</div>
-        <div class="empty-state-title">Belum ada soal</div>
-        <div class="empty-state-text">Klik "Tambah Soal" untuk mulai membuat soal</div>
+        <div class="empty-state-title">Belum ada soal untuk kriteria ini</div>
+        <div class="empty-state-text">Klik "Tambah Soal" untuk membuat soal baru untuk mata pelajaran ini</div>
       </div>`;
     return;
   }
@@ -143,6 +175,7 @@ function renderSoalList() {
       <div class="soal-text">${Utils.escapeHtml(s.pertanyaan)}</div>
       <div class="soal-meta">
         <span class="badge badge-gray">📚 ${Utils.escapeHtml(s.mapel||'-')}</span>
+        ${s.kelas ? `<span class="badge badge-gray">👥 Kelas: ${Utils.escapeHtml(s.kelas)}</span>` : ''}
         <span class="badge badge-gray">📖 ${Utils.escapeHtml(s.bab||'-')}</span>
         <span class="badge badge-gray">🎯 Bobot: ${s.bobot||1}</span>
         ${s.tipe==='pg' ? `<span class="badge badge-info">Kunci: ${s.jawaban}</span>` : ''}
@@ -172,6 +205,9 @@ function closeSoalModal() {
 
 function buildSoalForm(soal) {
   const tipe = soal?.tipe || 'pg';
+  const defaultMapel = soal?.mapel || (filterMapel !== 'semua' ? filterMapel : (myMapels[0] || ''));
+  const defaultKelas = soal?.kelas || (filterKelas !== 'semua' ? filterKelas : (myKelas[0] || ''));
+
   return `
     <form onsubmit="saveSoal(event)" novalidate>
       <div class="form-row">
@@ -186,13 +222,21 @@ function buildSoalForm(soal) {
         </div>
         <div class="form-group">
           <label class="form-label">Mata Pelajaran <span class="required">*</span></label>
-          <input type="text" id="soal-mapel" class="form-control" value="${Utils.escapeHtml(soal?.mapel||'')}" placeholder="e.g. Matematika" maxlength="50"/>
+          ${myMapels.length > 0 ? `
+          <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">
+            ${myMapels.map(m => `<button type="button" class="btn btn-ghost btn-xs" style="border:1px solid var(--gray-300);padding:1px 6px;font-size:10px" onclick="document.getElementById('soal-mapel').value='${m}'">${m}</button>`).join('')}
+          </div>` : ''}
+          <input type="text" id="soal-mapel" class="form-control" value="${Utils.escapeHtml(defaultMapel)}" placeholder="e.g. Matematika" maxlength="50"/>
         </div>
       </div>
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Kelas</label>
-          <input type="text" id="soal-kelas" class="form-control" value="${Utils.escapeHtml(soal?.kelas||'')}" placeholder="e.g. XI" maxlength="20"/>
+          ${myKelas.length > 0 ? `
+          <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">
+            ${myKelas.map(k => `<button type="button" class="btn btn-ghost btn-xs" style="border:1px solid var(--gray-300);padding:1px 6px;font-size:10px" onclick="document.getElementById('soal-kelas').value='${k}'">${k}</button>`).join('')}
+          </div>` : ''}
+          <input type="text" id="soal-kelas" class="form-control" value="${Utils.escapeHtml(defaultKelas)}" placeholder="e.g. XI / 8A" maxlength="20"/>
         </div>
         <div class="form-group">
           <label class="form-label">Bab / Topik</label>

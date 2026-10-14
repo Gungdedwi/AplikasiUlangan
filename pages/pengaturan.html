@@ -15,7 +15,7 @@
 <script>
 DB.init();
 Auth.init();
-const session = Layout.initStaff('pengaturan', ['admin']);
+const session = Layout.initStaff('pengaturan', ['admin', 'guru']);
 try {
   if (session) renderPengaturan();
 } catch (err) {
@@ -28,16 +28,135 @@ try {
   `);
 }
 
+const COMMON_MAPEL = ['Informatika', 'Matematika', 'Bahasa Indonesia', 'Bahasa Inggris', 'IPA', 'IPS', 'Fisika', 'Kimia', 'Biologi', 'PJOK', 'PKN', 'Seni Budaya', 'PAI / Agama'];
+const COMMON_KELAS = ['7A', '7B', '7C', '8A', '8B', '8C', '9A', '9B', '9C', 'X IPA 1', 'XI IPA 1', 'XII IPA 1'];
+
+function toggleTagInInput(inputId, tag) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  let items = input.value.split(',').map(s => s.trim()).filter(Boolean);
+  const idx = items.findIndex(item => item.toLowerCase() === tag.toLowerCase());
+  if (idx >= 0) {
+    items.splice(idx, 1);
+  } else {
+    items.push(tag);
+  }
+  input.value = items.join(', ');
+}
+
 function renderPengaturan() {
   Layout.setPageTitle('Pengaturan');
   const settings = DB.getSettings();
+  const isAdmin = session.role === 'admin';
+  const isGuru = session.role === 'guru';
+
+  const teacherMapel = session.mapel || '';
+  const teacherKelas = session.kelasAmpu || '';
+
+  // Hitung cakupan untuk guru
+  const myMapels = DB.getGuruMapels(session);
+  const myKelas = DB.getGuruKelas(session);
+  const mySoalCount = DB.getSoal().filter(s => DB.isGuruMatch(session, s.mapel, s.kelas) || s.pembuatId === session.userId).length;
+  const myUjianCount = DB.getUjian().filter(u => DB.isGuruMatch(session, u.mapel, u.kelas) || u.guruId === session.userId).length;
+
   const content = `
   <div class="animate-fade-in">
     <div class="mb-6">
-      <h1 class="page-title">Pengaturan</h1>
-      <p class="page-subtitle">Konfigurasi sistem, database cloud, dan Exam Mode</p>
+      <h1 class="page-title">${isAdmin ? 'Pengaturan Sistem & Pengguna' : 'Profil Pengajar & Pengaturan'}</h1>
+      <p class="page-subtitle">${isAdmin ? 'Konfigurasi sistem, database cloud, Exam Mode, dan manajemen akun guru & siswa' : 'Kelola identitas, mata pelajaran, dan kelas yang Anda ampu'}</p>
     </div>
 
+    <!-- Profil Pengajar & Bidang Ampuan (Khusus Guru / Admin) -->
+    <div class="card mb-6" style="border: 1.5px solid var(--primary-light); background: linear-gradient(to right, #FFFFFF, #F8FAFC)">
+      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-size:28px">👨‍🏫</span>
+          <div>
+            <h3 class="card-title" style="margin:0">Profil Pengajar & Bidang Ampuan</h3>
+            <div style="font-size:12px;color:var(--gray-500)">Atur Mata Pelajaran dan Kelas yang Anda ampu agar bank soal dan ujian otomatis terfilter</div>
+          </div>
+        </div>
+        <span class="badge ${isAdmin ? 'badge-primary' : 'badge-success'}" style="font-size:12px;padding:6px 12px">
+          ${isAdmin ? '🛡️ Administrator' : '👨‍🏫 Guru / Pendidik'}
+        </span>
+      </div>
+      <div style="padding:16px 0 0 0">
+        <form onsubmit="saveGuruProfile(event)" novalidate>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" class="mb-4">
+            <div>
+              <label class="form-label" style="font-weight:600">Nama Lengkap <span class="required">*</span></label>
+              <input type="text" id="gp-name" class="form-control" value="${Utils.escapeHtml(session.name)}" placeholder="Nama Lengkap dengan Gelar" maxlength="100" />
+            </div>
+            <div>
+              <label class="form-label" style="font-weight:600">Username Login</label>
+              <input type="text" class="form-control" value="${Utils.escapeHtml(session.username)}" readonly disabled style="background:var(--gray-100);cursor:not-allowed" />
+            </div>
+          </div>
+
+          <div class="form-group mb-4">
+            <label class="form-label" style="font-weight:600">Mata Pelajaran yang Diampu</label>
+            <div style="font-size:11px;color:var(--gray-500);margin-bottom:6px">Klik tag di bawah untuk menambah/menghapus secara cepat, atau ketik langsung (pisahkan dengan koma):</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+              ${COMMON_MAPEL.map(m => {
+                const isActive = myMapels.some(item => item.toLowerCase() === m.toLowerCase());
+                return `<button type="button" class="btn ${isActive ? 'btn-primary' : 'btn-outline'} btn-xs" style="padding:4px 10px;font-size:11px;border-radius:20px" onclick="toggleTagInInput('gp-mapel', '${m}')">${isActive ? '✓ ' : '+ '}${m}</button>`;
+              }).join('')}
+            </div>
+            <input type="text" id="gp-mapel" class="form-control" value="${Utils.escapeHtml(teacherMapel)}" placeholder="Contoh: Informatika, Matematika" maxlength="200" />
+          </div>
+
+          <div class="form-group mb-4">
+            <label class="form-label" style="font-weight:600">Kelas yang Diampu</label>
+            <div style="font-size:11px;color:var(--gray-500);margin-bottom:6px">Pilih kelas yang Anda ajar (pisahkan dengan koma):</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+              ${COMMON_KELAS.map(k => {
+                const isActive = myKelas.some(item => item.toLowerCase() === k.toLowerCase());
+                return `<button type="button" class="btn ${isActive ? 'btn-primary' : 'btn-outline'} btn-xs" style="padding:4px 10px;font-size:11px;border-radius:20px" onclick="toggleTagInInput('gp-kelas', '${k}')">${isActive ? '✓ ' : '+ '}${k}</button>`;
+              }).join('')}
+            </div>
+            <input type="text" id="gp-kelas" class="form-control" value="${Utils.escapeHtml(teacherKelas)}" placeholder="Contoh: 8A, 8B, 91, XI IPA 1" maxlength="200" />
+          </div>
+
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;border-top:1px solid var(--gray-200);padding-top:16px">
+            <div style="font-size:12px;color:var(--gray-500)">
+              Data mapel & kelas akan otomatis tersinkron ke cloud Supabase dan menjadi filter utama Anda.
+            </div>
+            <button type="submit" class="btn btn-primary">💾 Simpan Profil & Bidang Ampuan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    ${isGuru ? `
+    <!-- Ringkasan Ruang Lingkup Guru -->
+    <div class="card mb-6">
+      <div class="card-header"><h3 class="card-title">📊 Ruang Lingkup & Statistik Anda</h3></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px">
+        <div style="background:var(--primary-pale);border-radius:var(--radius);padding:14px;text-align:center">
+          <div style="font-size:24px;margin-bottom:4px">📚</div>
+          <div style="font-size:20px;font-weight:700;color:var(--primary)">${myMapels.length ? myMapels.join(', ') : '-'}</div>
+          <div style="font-size:11px;color:var(--gray-500)">Mata Pelajaran Aktif</div>
+        </div>
+        <div style="background:var(--success-light);border-radius:var(--radius);padding:14px;text-align:center">
+          <div style="font-size:24px;margin-bottom:4px">👥</div>
+          <div style="font-size:20px;font-weight:700;color:var(--success)">${myKelas.length ? myKelas.join(', ') : 'Semua'}</div>
+          <div style="font-size:11px;color:var(--gray-500)">Kelas Ampuan</div>
+        </div>
+        <div style="background:var(--gray-50);border-radius:var(--radius);padding:14px;text-align:center">
+          <div style="font-size:24px;margin-bottom:4px">📝</div>
+          <div style="font-size:20px;font-weight:700;color:var(--primary-dark)">${mySoalCount} Soal</div>
+          <div style="font-size:11px;color:var(--gray-500)">Soal Relevan di Bank Soal</div>
+        </div>
+        <div style="background:var(--gray-50);border-radius:var(--radius);padding:14px;text-align:center">
+          <div style="font-size:24px;margin-bottom:4px">📋</div>
+          <div style="font-size:20px;font-weight:700;color:var(--primary-dark)">${myUjianCount} Ujian</div>
+          <div style="font-size:11px;color:var(--gray-500)">Ujian Terjadwal Anda</div>
+        </div>
+      </div>
+    </div>
+    ` : ''}
+
+    ${isAdmin ? `
     <!-- Integrasi Supabase Cloud -->
     <div class="card mb-6" style="border: 1.5px solid var(--primary-light); background: linear-gradient(to right, #F8FAFC, #EFF6FF)">
       <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
@@ -154,7 +273,7 @@ function renderPengaturan() {
         <div class="card-header">
           <div>
             <h3 class="card-title">👥 Manajemen Pengguna</h3>
-            <div style="font-size:12px;color:var(--gray-500)">Hanya Administrator yang berhak membuat akun baru</div>
+            <div style="font-size:12px;color:var(--gray-500)">Kelola akun Administrator, Guru (beserta mapel/kelas), dan Siswa</div>
           </div>
           <button onclick="openAddUserModal()" class="btn btn-sm btn-primary">➕ Tambah Pengguna</button>
         </div>
@@ -183,12 +302,22 @@ function renderPengaturan() {
         <button onclick="seedDemoData()" class="btn btn-secondary btn-sm">🌱 Isi Data Contoh (Demo)</button>
       </div>
     </div>
+    ` : `
+    <!-- Keamanan Ujian Info untuk Guru -->
+    <div class="card mt-6">
+      <div class="card-header"><h3 class="card-title">🛡️ Informasi Proteksi & Keamanan Exam Mode</h3></div>
+      <div class="alert alert-info">
+        <span class="alert-icon">🔒</span>
+        <div><strong>Proteksi Ujian Aktif:</strong> Siswa diwajibkan masuk Fullscreen, keluar fullscreen atau membuka tab lain dicatat sebagai pelanggaran pada Audit Log, dan jawaban siswa otomatis tersimpan (autosave) secara berkala ke cloud.</div>
+      </div>
+    </div>
+    `}
 
-    <!-- Modal Tambah User -->
+    <!-- Modal Tambah / Edit User -->
     <div id="modal-add-user" class="modal-backdrop" style="display:none">
-      <div class="modal">
+      <div class="modal modal-lg">
         <div class="modal-header">
-          <h3 class="modal-title">Tambah Pengguna</h3>
+          <h3 class="modal-title" id="modal-user-title">Tambah Pengguna</h3>
           <button class="modal-close" onclick="closeUserModal()">✕</button>
         </div>
         <div class="modal-body" id="add-user-body"></div>
@@ -217,7 +346,24 @@ function renderPengaturan() {
   </div>`;
 
   Layout.setContent(content);
-  renderUserList();
+  if (isAdmin) renderUserList();
+}
+
+async function saveGuruProfile(e) {
+  e.preventDefault();
+  const name = Utils.sanitizeInput(document.getElementById('gp-name').value);
+  const mapel = Utils.sanitizeInput(document.getElementById('gp-mapel').value);
+  const kelasAmpu = Utils.sanitizeInput(document.getElementById('gp-kelas').value);
+
+  if (!name) {
+    Utils.toast('Nama pengajar wajib diisi', 'error');
+    return;
+  }
+
+  await DB.updateUser(session.userId, { name, mapel, kelasAmpu });
+  Auth.updateSession({ name, mapel, kelasAmpu });
+  Utils.toast('✅ Profil pengajar & bidang ampuan berhasil disimpan!', 'success');
+  renderPengaturan();
 }
 
 function buildSysInfo() {
@@ -254,82 +400,141 @@ function renderUserList() {
   }
   
   container.innerHTML = `
-  <div style="max-height:400px;overflow-y:auto">
+  <div style="max-height:420px;overflow-y:auto">
     ${users.map(u => {
       let roleBadge = '🎓 Siswa';
       let avatarBg = 'var(--success-light)';
       let avatarColor = 'var(--success)';
       if (u.role === 'admin') {
-        roleBadge = '🛡️ Administrator (Pembuat Akun)';
+        roleBadge = '🛡️ Administrator';
         avatarBg = 'var(--primary-light)';
         avatarColor = 'var(--primary-dark)';
       } else if (u.role === 'guru') {
-        roleBadge = '👨‍🏫 Guru (Pendidik / Pengelola Ujian)';
+        roleBadge = '👨‍🏫 Guru / Pendidik';
         avatarBg = 'var(--primary-pale)';
         avatarColor = 'var(--primary)';
       } else if (u.kelas) {
         roleBadge = '🎓 Siswa (' + Utils.escapeHtml(u.kelas) + ')';
       }
       return `
-      <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--gray-100)">
-        <div style="width:32px;height:32px;border-radius:50%;background:${avatarBg};color:${avatarColor};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">${Utils.getInitials(u.name)}</div>
+      <div style="display:flex;align-items:flex-start;gap:10px;padding:12px 0;border-bottom:1px solid var(--gray-100)">
+        <div style="width:34px;height:34px;border-radius:50%;background:${avatarBg};color:${avatarColor};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;margin-top:2px">${Utils.getInitials(u.name)}</div>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600;color:var(--gray-800)">${Utils.escapeHtml(u.name)}</div>
-          <div style="font-size:11px;color:var(--gray-500)">${u.username} • ${roleBadge}</div>
+          <div style="font-size:11px;color:var(--gray-500)">${Utils.escapeHtml(u.username)} • ${roleBadge}</div>
+          ${u.role === 'guru' ? `
+          <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">
+            ${u.mapel ? `<span class="badge badge-primary" style="font-size:10px">📚 ${Utils.escapeHtml(u.mapel)}</span>` : '<span class="badge badge-gray" style="font-size:10px">📚 Mapel: -</span>'}
+            ${u.kelasAmpu ? `<span class="badge badge-success" style="font-size:10px">👥 Kelas: ${Utils.escapeHtml(u.kelasAmpu)}</span>` : '<span class="badge badge-gray" style="font-size:10px">👥 Kelas: -</span>'}
+          </div>` : ''}
         </div>
-        ${u.username !== 'admin' && u.id !== session.userId ? `<button onclick="deleteUser('${u.id}')" class="btn btn-icon btn-sm" style="background:var(--danger-light);color:var(--danger)" title="Hapus">🗑️</button>` : ''}
+        <div style="display:flex;gap:4px">
+          <button onclick="openEditUserModal('${u.id}')" class="btn btn-icon btn-sm btn-outline" title="Edit">✏️</button>
+          ${u.username !== 'admin' && u.id !== session.userId ? `<button onclick="deleteUser('${u.id}')" class="btn btn-icon btn-sm" style="background:var(--danger-light);color:var(--danger)" title="Hapus">🗑️</button>` : ''}
+        </div>
       </div>`;
     }).join('')}
   </div>`;
 }
 
+let editingUserId = null;
+
 function openAddUserModal() {
-  document.getElementById('add-user-body').innerHTML = `
+  editingUserId = null;
+  document.getElementById('modal-user-title').textContent = 'Tambah Pengguna';
+  document.getElementById('add-user-body').innerHTML = buildUserForm();
+  document.getElementById('modal-add-user').style.display = 'flex';
+  toggleRoleFields();
+}
+
+function openEditUserModal(id) {
+  editingUserId = id;
+  const user = DB.getUserById(id);
+  if (!user) return;
+  document.getElementById('modal-user-title').textContent = `Edit Pengguna: ${user.name}`;
+  document.getElementById('add-user-body').innerHTML = buildUserForm(user);
+  document.getElementById('modal-add-user').style.display = 'flex';
+  toggleRoleFields();
+}
+
+function buildUserForm(user = null) {
+  const isEdit = Boolean(user);
+  const role = user?.role || 'siswa';
+  return `
     <form onsubmit="saveUser(event)" novalidate>
       <div class="form-group">
         <label class="form-label">Peran Akun <span class="required">*</span></label>
-        <select id="nu-role" class="form-control" onchange="toggleKelasField()">
-          <option value="siswa">🎓 Siswa (Peserta Ujian)</option>
-          <option value="guru">👨‍🏫 Guru (Pendidik / Pengelola Ujian)</option>
-          <option value="admin">🛡️ Administrator (Akses Penuh & Pembuat Akun)</option>
+        <select id="nu-role" class="form-control" onchange="toggleRoleFields()" ${isEdit && user.username==='admin'?'disabled':''}>
+          <option value="siswa" ${role==='siswa'?'selected':''}>🎓 Siswa (Peserta Ujian)</option>
+          <option value="guru" ${role==='guru'?'selected':''}>👨‍🏫 Guru (Pendidik / Pengelola Ujian)</option>
+          <option value="admin" ${role==='admin'?'selected':''}>🛡️ Administrator (Akses Penuh & Pembuat Akun)</option>
         </select>
       </div>
       <div class="form-group">
         <label class="form-label">Nama Lengkap <span class="required">*</span></label>
-        <input type="text" id="nu-name" class="form-control" placeholder="Masukkan nama lengkap" maxlength="100"/>
+        <input type="text" id="nu-name" class="form-control" placeholder="Masukkan nama lengkap" value="${Utils.escapeHtml(user?.name||'')}" maxlength="100"/>
       </div>
       <div class="form-group">
         <label class="form-label">Username <span class="required">*</span></label>
-        <input type="text" id="nu-username" class="form-control" placeholder="Username unik (tanpa spasi)" maxlength="50"/>
+        <input type="text" id="nu-username" class="form-control" placeholder="Username unik (tanpa spasi)" value="${Utils.escapeHtml(user?.username||'')}" ${isEdit?'readonly style="background:var(--gray-100)"':''} maxlength="50"/>
       </div>
       <div class="form-group">
-        <label class="form-label">Password / PIN <span class="required">*</span></label>
-        <input type="text" id="nu-password" class="form-control" placeholder="Minimal 4 karakter" maxlength="100"/>
+        <label class="form-label">${isEdit ? 'Password / PIN Baru (kosongkan jika tidak diubah)' : 'Password / PIN <span class="required">*</span>'}</label>
+        <input type="text" id="nu-password" class="form-control" placeholder="${isEdit ? 'Biarkan kosong jika tidak diubah' : 'Minimal 4 karakter'}" maxlength="100"/>
       </div>
-      <div class="form-group" id="kelas-field">
-        <label class="form-label">Kelas</label>
-        <input type="text" id="nu-kelas" class="form-control" placeholder="e.g. XI IPA 1" maxlength="50"/>
+
+      <!-- Siswa: Kelas -->
+      <div class="form-group" id="field-siswa-kelas">
+        <label class="form-label">Kelas Siswa</label>
+        <input type="text" id="nu-kelas" class="form-control" value="${Utils.escapeHtml(user?.kelas||'')}" placeholder="e.g. XI IPA 1" maxlength="50"/>
       </div>
+
+      <!-- Guru: Mapel & Kelas Ampuan -->
+      <div class="form-group" id="field-guru-mapel" style="display:none">
+        <label class="form-label">Mata Pelajaran yang Diampu</label>
+        <div style="font-size:11px;color:var(--gray-500);margin-bottom:6px">Pilihan cepat mata pelajaran:</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
+          ${COMMON_MAPEL.map(m => `<button type="button" class="btn btn-ghost btn-xs" style="padding:2px 8px;font-size:11px;border:1px solid var(--gray-300)" onclick="toggleTagInInput('nu-mapel', '${m}')">+ ${m}</button>`).join('')}
+        </div>
+        <input type="text" id="nu-mapel" class="form-control" value="${Utils.escapeHtml(user?.mapel||'')}" placeholder="e.g. Informatika, Matematika" maxlength="200"/>
+      </div>
+
+      <div class="form-group" id="field-guru-kelas" style="display:none">
+        <label class="form-label">Kelas yang Diampu</label>
+        <div style="font-size:11px;color:var(--gray-500);margin-bottom:6px">Pilihan cepat kelas:</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
+          ${COMMON_KELAS.map(k => `<button type="button" class="btn btn-ghost btn-xs" style="padding:2px 8px;font-size:11px;border:1px solid var(--gray-300)" onclick="toggleTagInInput('nu-kelas-ampu', '${k}')">+ ${k}</button>`).join('')}
+        </div>
+        <input type="text" id="nu-kelas-ampu" class="form-control" value="${Utils.escapeHtml(user?.kelasAmpu||'')}" placeholder="e.g. 8A, 8B, 91" maxlength="200"/>
+      </div>
+
       <div class="modal-footer" style="padding:0;border:none;margin-top:16px">
         <button type="button" onclick="closeUserModal()" class="btn btn-secondary">Batal</button>
-        <button type="submit" class="btn btn-primary">Simpan Pengguna</button>
+        <button type="submit" class="btn btn-primary">${isEdit ? '💾 Simpan Perubahan' : '➕ Tambah Pengguna'}</button>
       </div>
     </form>`;
-  document.getElementById('modal-add-user').style.display = 'flex';
 }
 
-function closeUserModal() { document.getElementById('modal-add-user').style.display = 'none'; }
+function closeUserModal() {
+  document.getElementById('modal-add-user').style.display = 'none';
+  editingUserId = null;
+}
 
-function toggleKelasField() {
+function toggleRoleFields() {
   const role = document.getElementById('nu-role').value;
-  const field = document.getElementById('kelas-field');
-  if (field) field.style.display = role === 'siswa' ? 'block' : 'none';
+  const siswaField = document.getElementById('field-siswa-kelas');
+  const guruMapelField = document.getElementById('field-guru-mapel');
+  const guruKelasField = document.getElementById('field-guru-kelas');
+
+  if (siswaField) siswaField.style.display = role === 'siswa' ? 'block' : 'none';
+  if (guruMapelField) guruMapelField.style.display = role === 'guru' ? 'block' : 'none';
+  if (guruKelasField) guruKelasField.style.display = role === 'guru' ? 'block' : 'none';
 }
 
 async function saveUser(e) {
   e.preventDefault();
   if (session.role !== 'admin') {
-    Utils.toast('Hanya Administrator yang memiliki hak membuat akun', 'error');
+    Utils.toast('Hanya Administrator yang memiliki hak membuat atau mengedit akun', 'error');
     return;
   }
   const name = Utils.sanitizeInput(document.getElementById('nu-name').value);
@@ -337,15 +542,28 @@ async function saveUser(e) {
   const password = document.getElementById('nu-password').value;
   const role = document.getElementById('nu-role').value;
   const kelas = role === 'siswa' ? Utils.sanitizeInput(document.getElementById('nu-kelas').value) : '';
+  const mapel = role === 'guru' ? Utils.sanitizeInput(document.getElementById('nu-mapel')?.value || '') : '';
+  const kelasAmpu = role === 'guru' ? Utils.sanitizeInput(document.getElementById('nu-kelas-ampu')?.value || '') : '';
   
-  if (!name || !username || !password) { Utils.toast('Semua field wajib diisi', 'error'); return; }
-  if (password.length < 4) { Utils.toast('Password minimal 4 karakter', 'error'); return; }
+  if (!name || !username) { Utils.toast('Nama dan username wajib diisi', 'error'); return; }
   
-  const existing = DB.getUsers().find(u => u.username === username);
-  if (existing) { Utils.toast('Username sudah digunakan', 'error'); return; }
-  
-  await DB.addUser({ name, username, password, role, kelas, active: true });
-  Utils.toast(`Akun ${role.toUpperCase()} "${name}" berhasil dibuat`, 'success');
+  if (!editingUserId) {
+    if (!password) { Utils.toast('Password wajib diisi untuk pengguna baru', 'error'); return; }
+    if (password.length < 4) { Utils.toast('Password minimal 4 karakter', 'error'); return; }
+    const existing = DB.getUsers().find(u => u.username === username);
+    if (existing) { Utils.toast('Username sudah digunakan', 'error'); return; }
+
+    await DB.addUser({ name, username, password, role, kelas, mapel, kelasAmpu, active: true });
+    Utils.toast(`Akun ${role.toUpperCase()} "${name}" berhasil dibuat`, 'success');
+  } else {
+    const updateData = { name, role, kelas, mapel, kelasAmpu };
+    if (password && password.length >= 4) {
+      updateData.password = password;
+    }
+    await DB.updateUser(editingUserId, updateData);
+    Utils.toast(`Akun "${name}" berhasil diperbarui`, 'success');
+  }
+
   closeUserModal();
   renderUserList();
 }

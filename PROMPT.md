@@ -73,3 +73,28 @@ Tolong implementasikan:
 1. `js/auth.js`: Harus menggunakan Supabase Auth (untuk membedakan role guru dan siswa).
 2. `js/storage.js`: Jangan gunakan localStorage untuk data utama. Gunakan query Supabase (`select`, `insert`, `update`) untuk memuat soal ke `ujian.html` dan mengirim hasil ujian dari `selesai.html` ke database cloud agar bisa dibaca oleh `dashboard-guru.html` dan `hasil.html`.
 3. Berikan instruksi tabel apa saja (SQL DDL) yang harus saya buat di dashboard Supabase agar kode JS yang kamu buat ini singkron.
+
+
+
+## 📌 FITUR TAMBAHAN: PENGATURAN MATA PELAJARAN & KELAS AMPUAN GURU (SUPABASE & UI)
+
+Tolong tambahkan fitur filter & proteksi data berdasarkan **Mata Pelajaran (Mapel)** dan **Kelas** yang diampu oleh Guru pada aplikasi Ulangan Digital ini:
+
+### 1. Update Skema Supabase (SQL DDL & Metadata):
+- Pada tabel `profiles` (atau metadata `auth.users`), tambahkan kolom:
+  - `subject` / `mapel` (text/array, contoh: "Informatika", "Matematika")
+  - `assigned_classes` / `kelas` (text/array, contoh: "8A", "8B", "91")
+- Perbarui skema tabel `bank_soal` dan `jadwal_ujian` agar memiliki relasi/kolom `subject` dan `class_level`.
+- Sesuaikan **Row Level Security (RLS)** agar:
+  - Guru secara otomatis hanya dapat melihat, menambah, mengedit, atau menghapus bank soal dan ujian yang sesuai dengan **Mapel & Kelas** yang diampunya.
+  - (Opsional) Guru dengan role `admin` dapat melihat semua mapel.
+
+### 2. Update Registrasi & Profil Guru:
+- Tambahkan input/dropdown *multi-select* atau *checkbox* **Mata Pelajaran** dan **Kelas** pada form pendaftaran akun Guru (serta di halaman Pengaturan Profil Guru).
+- Simpan data mapel & kelas ampuannya ke Supabase saat akun dibuat/diperbarui.
+
+### 3. Update Logika Frontend (JS & UI):
+- Pada `js/storage.js` & `js/auth.js`:
+  - Saat Guru login, ambil data Mapel dan Kelas yang diampu dari profil guru tersebut.
+  - Saat memuat halaman **Bank Soal** (`bank-soal.html`) dan **Manajemen Ujian**, secara otomatis filter query Supabase (`.eq()` atau `.in()`) agar hanya menampilkan soal & ujian yang relevan dengan guru yang sedang aktif.
+  - Pada dropdown filter (seperti di sebelah tombol 'Tambah Soal'), atur agar secara *default* memilih Mapel utama milik guru tersebut, namun tetap sediakan opsi filter antar kelas yang dia ampu.

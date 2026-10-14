@@ -8,6 +8,10 @@
 alter table if exists public.users drop constraint if exists users_role_check;
 alter table if exists public.users add constraint users_role_check check (role in ('admin', 'guru', 'siswa'));
 
+-- Tambahkan kolom Mapel & Kelas Ampuan Guru jika belum ada:
+alter table if exists public.users add column if not exists mapel text;
+alter table if exists public.users add column if not exists kelas_ampu text;
+
 -- ── 1. Tabel: users (Profil Pengguna Admin, Guru & Siswa) ──
 create table if not exists public.users (
   id text primary key default gen_random_uuid()::text,
@@ -18,6 +22,8 @@ create table if not exists public.users (
   email text,
   kelas text,
   no_absen text,
+  mapel text,
+  kelas_ampu text,
   active boolean default true,
   created_at timestamptz default now()
 );

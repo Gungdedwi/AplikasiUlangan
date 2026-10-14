@@ -18,6 +18,8 @@ const Layout = {
     { id: 'bank-soal', icon: '📚', label: 'Bank Soal', href: 'bank-soal.html' },
     { section: 'Laporan' },
     { id: 'hasil', icon: '📊', label: 'Hasil & Nilai', href: 'hasil.html' },
+    { section: 'Akun' },
+    { id: 'pengaturan', icon: '⚙️', label: 'Profil & Mapel', href: 'pengaturan.html' },
   ],
 
   initStaff(activeId, allowedRoles = ['guru', 'admin']) {

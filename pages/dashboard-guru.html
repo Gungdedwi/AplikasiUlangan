@@ -42,11 +42,20 @@ window.addEventListener('supabase-synced', () => {
 function renderDashboard() {
   Layout.setPageTitle('Dashboard');
   
-  const ujianList = DB.getUjian().filter(u => Boolean(u) && (!u.guruId || u.guruId === session.userId || session.role === 'admin' || session.role === 'guru'));
-  const hasilList = DB.getHasil();
-  const soalList = DB.getSoal().filter(s => Boolean(s) && (!s.pembuatId || s.pembuatId === session.userId || session.role === 'admin' || session.role === 'guru'));
-  const logs = DB.getLogs();
-  const siswaCount = DB.getUsers().filter(u => u.role === 'siswa').length;
+  const myMapels = DB.getGuruMapels(session);
+  const myKelas = DB.getGuruKelas(session);
+  const isAdmin = session.role === 'admin';
+
+  const ujianList = DB.getUjian().filter(u => Boolean(u) && (isAdmin || DB.isGuruMatch(session, u.mapel, u.kelas) || u.guruId === session.userId));
+  const teacherUjianIds = new Set(ujianList.map(u => u.id));
+  const hasilList = DB.getHasil().filter(h => isAdmin || teacherUjianIds.has(h.ujianId) || (h.guruId && h.guruId === session.userId));
+  const soalList = DB.getSoal().filter(s => Boolean(s) && (isAdmin || DB.isGuruMatch(session, s.mapel, s.kelas) || s.pembuatId === session.userId));
+  const logs = DB.getLogs().filter(l => isAdmin || (l.ujianId && teacherUjianIds.has(l.ujianId)));
+
+  const allSiswa = DB.getUsers().filter(u => u.role === 'siswa');
+  const siswaCount = (!isAdmin && myKelas.length > 0)
+    ? allSiswa.filter(s => myKelas.some(k => (s.kelas||'').toLowerCase().includes(k.toLowerCase()))).length
+    : allSiswa.length;
   
   const aktifCount = ujianList.filter(u => Utils.isUjianAktif(u)).length;
   const selesaiHasil = hasilList.filter(h => h.status === 'selesai');
@@ -63,6 +72,12 @@ function renderDashboard() {
       <div>
         <h1 class="page-title">Dashboard</h1>
         <p class="page-subtitle">Selamat datang kembali, ${Utils.escapeHtml(session.name)}! 👋</p>
+        ${!isAdmin ? `
+        <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
+          <span class="badge badge-primary">📚 Mapel: ${myMapels.length ? myMapels.join(', ') : 'Semua Mapel'}</span>
+          <span class="badge badge-success">👥 Kelas: ${myKelas.length ? myKelas.join(', ') : 'Semua Kelas'}</span>
+          <a href="pengaturan.html" style="font-size:12px;color:var(--primary);margin-left:4px;text-decoration:underline">⚙️ Ubah Mapel & Kelas</a>
+        </div>` : ''}
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <a href="bank-soal.html" class="btn btn-outline">

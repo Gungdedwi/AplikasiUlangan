@@ -40,16 +40,31 @@ window.addEventListener('supabase-synced', () => {
   if (session) renderHasil();
 });
 
+const myMapels = DB.getGuruMapels(session);
+const myKelas = DB.getGuruKelas(session);
+
+function getTeacherUjian() {
+  return DB.getUjian().filter(u => {
+    if (!u) return false;
+    if (session.role === 'admin') return true;
+    return DB.isGuruMatch(session, u.mapel, u.kelas) || u.guruId === session.userId;
+  });
+}
+
 function renderHasil() {
   Layout.setPageTitle('Hasil & Nilai');
-  const ujianList = DB.getUjian().filter(u => Boolean(u) && (!u.guruId || u.guruId === session.userId || session.role === 'admin' || session.role === 'guru'));
+  const ujianList = getTeacherUjian();
 
   const content = `
   <div class="animate-fade-in">
     <div class="flex items-center justify-between mb-6">
       <div>
         <h1 class="page-title">Hasil & Nilai</h1>
-        <p class="page-subtitle">Rekap nilai dan performa siswa</p>
+        <p class="page-subtitle">
+          ${session.role === 'guru'
+            ? `Rekap nilai siswa untuk Mapel: <strong style="color:var(--primary)">${myMapels.join(', ') || 'Semua'}</strong> • Kelas: <strong>${myKelas.join(', ') || 'Semua'}</strong>`
+            : 'Rekap nilai dan performa siswa seluruh ujian (Akses Administrator)'}
+        </p>
       </div>
       <button onclick="exportData()" class="btn btn-outline">📥 Export CSV</button>
     </div>
@@ -60,8 +75,8 @@ function renderHasil() {
         <div>
           <label class="form-label">Filter Ujian</label>
           <select class="form-control" id="filter-ujian" onchange="selectedUjianId=this.value;renderHasilTable()" style="width:auto;min-width:250px">
-            <option value="semua">Semua Ujian</option>
-            ${ujianList.map(u => `<option value="${u.id}" ${selectedUjianId===u.id?'selected':''}>${Utils.escapeHtml(u.judul)}</option>`).join('')}
+            <option value="semua">Semua Ujian Saya</option>
+            ${ujianList.map(u => `<option value="${u.id}" ${selectedUjianId===u.id?'selected':''}>${Utils.escapeHtml(u.judul)} (${Utils.escapeHtml(u.mapel)} - ${Utils.escapeHtml(u.kelas||'Semua')})</option>`).join('')}
           </select>
         </div>
         <div>
@@ -111,8 +126,9 @@ function renderHasilTable() {
   let hasilList = DB.getHasil();
   
   // Filter by guru / admin
-  const guruUjianIds = DB.getUjian().filter(u => Boolean(u) && (!u.guruId || u.guruId === session.userId || session.role === 'admin' || session.role === 'guru')).map(u => u.id);
-  hasilList = hasilList.filter(h => guruUjianIds.includes(h.ujianId));
+  const guruUjianList = getTeacherUjian();
+  const guruUjianIds = guruUjianList.map(u => u.id);
+  hasilList = hasilList.filter(h => session.role === 'admin' || guruUjianIds.includes(h.ujianId) || (h.guruId && h.guruId === session.userId));
   
   if (ujianId !== 'semua') hasilList = hasilList.filter(h => h.ujianId === ujianId);
   if (statusFilter !== 'semua') hasilList = hasilList.filter(h => h.status === statusFilter);
