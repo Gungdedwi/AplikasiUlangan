@@ -536,6 +536,11 @@ const DB = {
     return null;
   },
 
+  getUserById(id) {
+    if (!id) return null;
+    return this.getUsers().find(u => u.id === String(id)) || null;
+  },
+
   async findUserById(id) {
     if (this.client) {
       try {
@@ -543,25 +548,39 @@ const DB = {
         if (!error && data) return this._toCamelUser(data);
       } catch (e) {}
     }
-    return this.getUsers().find(u => u.id === id);
+    return this.getUserById(id);
   },
 
   async updateUser(id, data) {
-    const updateData = { ...data };
-    if (updateData.password && updateData.password.length !== 64 && typeof Utils !== 'undefined' && Utils.hashPassword) {
-      updateData.password = await Utils.hashPassword(updateData.password);
+    if (!id) return;
+    const existing = this.getUserById(id) || {};
+    const updateData = { ...existing, ...data };
+
+    if (data.password) {
+      if (data.password.length !== 64 && typeof Utils !== 'undefined' && Utils.hashPassword) {
+        updateData.password = await Utils.hashPassword(data.password);
+      }
+    } else {
+      updateData.password = existing.password;
     }
+
     const users = this.getUsers().map(u => u.id === id ? { ...u, ...updateData } : u);
     this.setUsers(users);
 
     if (this.client) {
       try {
-        const row = this._toSnakeUser({ id, ...updateData });
+        const row = this._toSnakeUser({ ...updateData, id });
+        if (!data.password && !row.password) {
+          delete row.password;
+        }
         const { error } = await this.client.from('users').update(row).eq('id', id);
-        if (error && (error.message?.includes('mapel') || error.message?.includes('kelas_ampu'))) {
-          delete row.mapel;
-          delete row.kelas_ampu;
-          await this.client.from('users').update(row).eq('id', id);
+        if (error) {
+          console.error('Supabase updateUser error:', error);
+          if (error.message?.includes('mapel') || error.message?.includes('kelas_ampu')) {
+            delete row.mapel;
+            delete row.kelas_ampu;
+            await this.client.from('users').update(row).eq('id', id);
+          }
         }
       } catch (e) {
         console.error('Supabase updateUser error:', e);
