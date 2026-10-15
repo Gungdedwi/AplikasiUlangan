@@ -30,11 +30,6 @@ try {
 }
 
 // Sinkronkan data hasil ujian terbaru dari Supabase Cloud
-if (DB.client) {
-  DB.syncFromSupabase().then(() => {
-    if (session) renderDashboard();
-  });
-}
 window.addEventListener('supabase-synced', () => {
   if (session) renderDashboard();
 });

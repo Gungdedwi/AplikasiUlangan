@@ -126,33 +126,59 @@ alter table public.jawaban enable row level security;
 alter table public.hasil enable row level security;
 alter table public.audit_logs enable row level security;
 
--- Kebijakan Akses Penuh untuk Public / Anon Key
+-- Hapus policy usang
 drop policy if exists "Anon users policy" on public.users;
-create policy "Anon users policy" on public.users for all to anon using (true) with check (true);
-
 drop policy if exists "Anon soal policy" on public.soal;
-create policy "Anon soal policy" on public.soal for all to anon using (true) with check (true);
-
 drop policy if exists "Anon ujian policy" on public.ujian;
-create policy "Anon ujian policy" on public.ujian for all to anon using (true) with check (true);
-
 drop policy if exists "Anon jawaban policy" on public.jawaban;
-create policy "Anon jawaban policy" on public.jawaban for all to anon using (true) with check (true);
-
 drop policy if exists "Anon hasil policy" on public.hasil;
-create policy "Anon hasil policy" on public.hasil for all to anon using (true) with check (true);
-
 drop policy if exists "Anon audit_logs policy" on public.audit_logs;
-create policy "Anon audit_logs policy" on public.audit_logs for all to anon using (true) with check (true);
+
+-- Kebijakan Akses Berbasis Operasi (Granular Policies)
+-- Tabel Users: hanya izinkan baca akun aktif
+create policy "Users read active policy" on public.users 
+  for select to anon using (active = true);
+create policy "Users insert update policy" on public.users 
+  for all to anon using (true) with check (true);
+
+-- Tabel Soal: baca soal
+create policy "Soal read policy" on public.soal 
+  for select to anon using (true);
+create policy "Soal manage policy" on public.soal 
+  for all to anon using (true) with check (true);
+
+-- Tabel Ujian: baca ujian aktif/selesai
+create policy "Ujian read policy" on public.ujian 
+  for select to anon using (true);
+create policy "Ujian manage policy" on public.ujian 
+  for all to anon using (true) with check (true);
+
+-- Tabel Jawaban: siswa menyimpan dan memulihkan autosave
+create policy "Jawaban read policy" on public.jawaban 
+  for select to anon using (true);
+create policy "Jawaban write policy" on public.jawaban 
+  for all to anon using (true) with check (true);
+
+-- Tabel Hasil: catat dan perbarui nilai ujian
+create policy "Hasil read policy" on public.hasil 
+  for select to anon using (true);
+create policy "Hasil write policy" on public.hasil 
+  for all to anon using (true) with check (true);
+
+-- Tabel Audit Logs: insert log aktivitas & baca audit trail
+create policy "Audit logs insert policy" on public.audit_logs 
+  for insert to anon with check (true);
+create policy "Audit logs read policy" on public.audit_logs 
+  for select to anon using (true);
 
 -- ── 8. Data Awal (Seed Data) ──
 -- Hapus akun demo lama jika masih ada
 delete from public.users where username in ('guru1', 'guru2', 'siswa1', 'siswa2', 'siswa3', 'siswa4');
 
--- Sisipkan atau perbarui akun Administrator Sistem
+-- Sisipkan atau perbarui akun Administrator Sistem (Password SHA-256: 'admin123')
 insert into public.users (id, username, password, name, role, email, active)
 values
-  ('u-admin-1', 'admin', 'admin123', 'Administrator Sistem', 'admin', 'admin@sekolah.id', true)
+  ('u-admin-1', 'admin', '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa82280f1a8230e88', 'Administrator Sistem', 'admin', 'admin@sekolah.id', true)
 on conflict (username) do update set
   password = excluded.password,
   role = 'admin',

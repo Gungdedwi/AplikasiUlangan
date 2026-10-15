@@ -38,6 +38,13 @@ let nilaiLabel = '';
     return;
   }
 
+  // A2: Batasi akses hasil hanya untuk siswa yang bersangkutan atau staf
+  if (session.role === 'siswa' && hasil.siswaId && String(hasil.siswaId) !== String(session.userId)) {
+    alert('Akses ditolak: Anda tidak memiliki izin untuk melihat hasil ujian ini.');
+    window.location.href = 'dashboard-siswa.html';
+    return;
+  }
+
   ujian = DB.getUjianById(hasil.ujianId);
   if (!ujian && DB.client) {
     ujian = await DB.fetchUjianById(hasil.ujianId);

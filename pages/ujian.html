@@ -134,7 +134,20 @@ async function masukLayarPenuh() {
     ujian = await DB.fetchUjianById(ujianId);
   }
   if (!ujian) {
-    alert('Ujian tidak ditemukan atau belum aktif');
+    alert('Ujian tidak ditemukan.');
+    window.location.href = 'dashboard-siswa.html';
+    return;
+  }
+
+  // A3: Validasi status aktif, jadwal, dan kelayakan ujian
+  if (!Utils.isUjianAktif(ujian)) {
+    if (Utils.isUjianBelumMulai(ujian)) {
+      alert('Ujian belum dimulai sesuai jadwal.');
+    } else if (Utils.isUjianSelesai(ujian)) {
+      alert('Waktu pelaksanaan ujian ini telah berakhir.');
+    } else {
+      alert('Ujian ini berstatus nonaktif atau belum dipublikasikan.');
+    }
     window.location.href = 'dashboard-siswa.html';
     return;
   }
@@ -157,7 +170,7 @@ async function masukLayarPenuh() {
     <!-- Topbar -->
     <div class="exam-topbar">
       <div style="display:flex;align-items:center;gap:12px">
-        <button onclick="toggleMobileNav()" style="background:none;border:none;color:white;font-size:20px;cursor:pointer;display:none" id="btn-mobile-nav">☰</button>
+        <button onclick="toggleMobileNav()" class="btn-mobile-nav" id="btn-mobile-nav" title="Menu Navigasi Soal">☰</button>
         <div>
           <div class="exam-title">${Utils.escapeHtml(ujian.judul)}</div>
           <div style="font-size:11px;opacity:0.7">${Utils.escapeHtml(session.name)} • ${Utils.escapeHtml(ujian.mapel||'-')}</div>
@@ -282,8 +295,7 @@ function onViolation(result, message) {
   ExamEngine.state.violationOverlayShown = true;
 }
 
-function onSuspended() {
-  ExamEngine.submit('suspended');
+async function onSuspended() {
   const suspOverlay = document.getElementById('suspended-overlay');
   if (suspOverlay) {
     document.getElementById('suspended-name').textContent = session.name;
@@ -291,6 +303,7 @@ function onSuspended() {
     document.getElementById('suspended-time').textContent = new Date().toLocaleString('id-ID');
     suspOverlay.style.display = 'flex';
   }
+  await ExamEngine.submit('suspended');
 }
 
 function kembaliKeUjian() {

@@ -10,16 +10,21 @@ const Utils = {
     if (h > 0) return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
     return `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
   },
+  _getDateOptions(includeTime = false, opts = {}) {
+    const base = { day: '2-digit', month: 'short', year: 'numeric' };
+    if (includeTime) {
+      base.hour = '2-digit';
+      base.minute = '2-digit';
+    }
+    return { ...base, ...opts };
+  },
   formatDate(ts, opts = {}) {
     if (!ts) return '-';
-    const d = new Date(ts);
-    const defaultOpts = { day:'2-digit', month:'short', year:'numeric', ...opts };
-    return d.toLocaleDateString('id-ID', defaultOpts);
+    return new Date(ts).toLocaleDateString('id-ID', this._getDateOptions(false, opts));
   },
-  formatDateTime(ts) {
+  formatDateTime(ts, opts = {}) {
     if (!ts) return '-';
-    const d = new Date(ts);
-    return d.toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    return new Date(ts).toLocaleDateString('id-ID', this._getDateOptions(true, opts));
   },
   formatDuration(seconds) {
     if (!seconds) return '-';
@@ -50,6 +55,16 @@ const Utils = {
   },
 
   // ── Security & Hashing ──
+  uuid() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      try { return crypto.randomUUID(); } catch (e) {}
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  },
   escapeHtml(str) {
     if (typeof str !== 'string') return str;
     const map = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' };
@@ -199,22 +214,23 @@ const Utils = {
   hitungNilai(ujian, jawaban, soalList) {
     let totalBobot = 0;
     let bobotBenar = 0;
+    let hasManualGrading = false;
     const detail = {};
 
     soalList.forEach(soal => {
-      const bobot = soal.bobot || 1;
+      const bobot = (soal.bobot !== undefined && soal.bobot !== null && !isNaN(soal.bobot)) ? Number(soal.bobot) : 1;
       totalBobot += bobot;
-      const jwb = jawaban.answers?.[soal.id];
+      const jwb = (jawaban.answers && jawaban.answers[soal.id] !== undefined) ? jawaban.answers[soal.id] : undefined;
       let benar = false;
 
       if (soal.tipe === 'pg' || soal.tipe === 'bs') {
         benar = jwb !== undefined && jwb === soal.jawaban;
       } else if (soal.tipe === 'isian') {
-        benar = jwb !== undefined && jwb.trim().toLowerCase() === soal.jawaban.trim().toLowerCase();
+        benar = jwb !== undefined && typeof jwb === 'string' && typeof soal.jawaban === 'string' &&
+                jwb.trim().toLowerCase() === soal.jawaban.trim().toLowerCase();
       } else if (soal.tipe === 'uraian') {
-        // Uraian perlu dinilai manual, set 0 dulu
-        benar = false;
-        detail[soal.id] = { status: 'manual', bobot, bobotDapat: 0 };
+        hasManualGrading = true;
+        detail[soal.id] = { status: 'manual', bobot, bobotDapat: 0, jawaban: jwb, kunci: soal.jawaban };
         return;
       }
 
@@ -224,10 +240,22 @@ const Utils = {
     });
 
     const nilai = totalBobot > 0 ? Math.round((bobotBenar / totalBobot) * 100 * 10) / 10 : 0;
-    const lulus = nilai >= (ujian.kkm || 75);
-    const dijawab = Object.keys(jawaban.answers || {}).length;
+    const kkm = (ujian.kkm !== undefined && ujian.kkm !== null && !isNaN(ujian.kkm)) ? Number(ujian.kkm) : 75;
+    const lulus = hasManualGrading ? null : (nilai >= kkm);
+    
+    // B7: Hanya hitung jawaban yang benar-benar terisi (bukan string kosong / null)
+    const dijawab = Object.values(jawaban.answers || {}).filter(v => v !== null && v !== undefined && String(v).trim() !== '').length;
 
-    return { nilai, lulus, totalBobot, bobotBenar, dijawab, detail, totalSoal: soalList.length };
+    return { 
+      nilai, 
+      lulus, 
+      totalBobot, 
+      bobotBenar, 
+      dijawab, 
+      detail, 
+      totalSoal: soalList.length,
+      menungguPenilaian: hasManualGrading 
+    };
   },
 
   // === DATE/TIME ===

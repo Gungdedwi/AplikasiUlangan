@@ -42,11 +42,6 @@ try {
 }
 
 // Sinkronkan data ujian terbaru dari Supabase Cloud
-if (DB.client) {
-  DB.syncFromSupabase().then(() => {
-    if (session) renderManajemenUjian();
-  });
-}
 window.addEventListener('supabase-synced', () => {
   if (session) renderManajemenUjian();
 });
@@ -361,31 +356,43 @@ function saveUjian(e) {
     guruId: session.userId,
   };
 
-  if (editingUjianId) {
-    DB.updateUjian(editingUjianId, data);
-    Utils.toast('Ujian berhasil diperbarui', 'success');
-  } else {
-    DB.addUjian(data);
-    Utils.toast('Ujian berhasil dibuat', 'success');
+  try {
+    if (editingUjianId) {
+      await DB.updateUjian(editingUjianId, data);
+      Utils.toast('Ujian berhasil diperbarui', 'success');
+    } else {
+      await DB.addUjian(data);
+      Utils.toast('Ujian berhasil dibuat', 'success');
+    }
+    closeUjianModal();
+    renderUjianList();
+  } catch (err) {
+    Utils.toast('Gagal menyimpan ujian: ' + (err.message || err), 'error');
   }
-  closeUjianModal();
-  renderUjianList();
 }
 
-function toggleStatus(id) {
+async function toggleStatus(id) {
   const ujian = DB.getUjianById(id);
   if (!ujian) return;
   const newStatus = ujian.status === 'aktif' ? 'nonaktif' : 'aktif';
-  DB.updateUjian(id, { status: newStatus });
-  Utils.toast(`Ujian berhasil ${newStatus === 'aktif' ? 'diaktifkan' : 'dinonaktifkan'}`, 'success');
-  renderUjianList();
+  try {
+    await DB.updateUjian(id, { status: newStatus });
+    Utils.toast(`Ujian berhasil ${newStatus === 'aktif' ? 'diaktifkan' : 'dinonaktifkan'}`, 'success');
+    renderUjianList();
+  } catch (err) {
+    Utils.toast('Gagal mengubah status ujian: ' + (err.message || err), 'error');
+  }
 }
 
 function hapusUjian(id) {
-  Utils.confirm('Hapus Ujian', 'Yakin ingin menghapus ujian ini? Semua data hasil juga akan terhapus.', () => {
-    DB.deleteUjian(id);
-    Utils.toast('Ujian berhasil dihapus', 'success');
-    renderUjianList();
+  Utils.confirm('Hapus Ujian', 'Yakin ingin menghapus ujian ini? Semua data hasil juga akan terhapus.', async () => {
+    try {
+      await DB.deleteUjian(id);
+      Utils.toast('Ujian berhasil dihapus', 'success');
+      renderUjianList();
+    } catch (err) {
+      Utils.toast('Gagal menghapus ujian: ' + (err.message || err), 'error');
+    }
   });
 }
 

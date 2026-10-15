@@ -1220,10 +1220,25 @@ tbody tr:hover { background: var(--gray-50); transition: background var(--transi
   }
   .sidebar-overlay.show { display: block; }
   .main-content { margin-left: 0; }
-  .hamburger { display: flex; align-items: center; justify-content: center; }
+  .btn-mobile-nav { display: inline-flex; }
+  .user-info-desktop { display: none !important; }
   .exam-sidebar { display: none; }
   .exam-sidebar.show { display: block; position: fixed; inset: 0; z-index: 200; height: 100vh; width: 280px; }
   .page-content { padding: 20px 16px; }
+}
+
+.btn-mobile-nav {
+  display: none;
+  background: none;
+  border: none;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+.user-info-desktop {
+  display: block;
 }
 @media (max-width: 768px) {
   .topbar { padding: 0 16px; }

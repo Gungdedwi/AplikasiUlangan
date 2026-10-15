@@ -56,15 +56,20 @@ const Auth = {
           const userMeta = data.user.user_metadata || {};
           let profile = await DB.findUserById(data.user.id);
           if (!profile) {
-            profile = {
-              id: data.user.id,
-              username: userMeta.username || identifier.split('@')[0],
-              name: userMeta.name || identifier.split('@')[0],
-              role: userMeta.role || (Array.isArray(expectedRole) ? expectedRole[0] : expectedRole) || 'siswa',
-              email: data.user.email,
-              kelas: userMeta.kelas || '',
-              active: true
-            };
+            // S5: Jangan pakai expectedRole client sebagai sumber role otoritatif
+            if (userMeta.role) {
+              profile = {
+                id: data.user.id,
+                username: userMeta.username || identifier.split('@')[0],
+                name: userMeta.name || identifier.split('@')[0],
+                role: userMeta.role,
+                email: data.user.email,
+                kelas: userMeta.kelas || '',
+                active: true
+              };
+            } else {
+              return { success: false, error: 'Profil atau otorisasi role pengguna belum dikonfigurasi di server.' };
+            }
           }
           authUser = profile;
         }

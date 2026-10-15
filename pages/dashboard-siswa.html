@@ -18,10 +18,11 @@ Auth.init();
 const session = Auth.requireRole('siswa', '../index.html');
 if (!session) throw new Error('Unauthorized');
 
-// Ambil riwayat ujian siswa ini
-const hasilList = DB.getHasilBySiswa(session.userId).sort((a,b) => b.submittedAt - a.submittedAt);
+function renderDashboard() {
+  // Ambil riwayat ujian siswa ini
+  const hasilList = DB.getHasilBySiswa(session.userId).sort((a,b) => b.submittedAt - a.submittedAt);
 
-document.body.innerHTML = `
+  document.body.innerHTML = `
 <div style="min-height:100vh;background:linear-gradient(135deg,#EFF6FF 0%,#F0F9FF 100%)">
   <!-- Topbar -->
   <header style="background:white;border-bottom:1px solid var(--gray-200);padding:0 24px;height:64px;display:flex;align-items:center;justify-content:space-between;box-shadow:var(--shadow-sm);position:sticky;top:0;z-index:50">
@@ -33,7 +34,7 @@ document.body.innerHTML = `
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:10px">
-      <div style="text-align:right;display:none" id="user-info-desktop">
+      <div style="text-align:right" class="user-info-desktop" id="user-info-desktop">
         <div style="font-size:13px;font-weight:600;color:var(--gray-800)">${Utils.escapeHtml(session.name)}</div>
         <div style="font-size:11px;color:var(--gray-400)">${Utils.escapeHtml(session.kelas||'Siswa')}</div>
       </div>
@@ -136,7 +137,10 @@ function getKode() {
 
 async function checkAutoPreview(kode) {
   if (kode.length !== 6) return;
-  const ujian = await DB.getUjianByKode(kode);
+  let ujian = DB.getUjianByKode(kode);
+  if (!ujian && DB.client) {
+    ujian = await DB.fetchUjianByKode(kode);
+  }
   if (!ujian) return;
   await showUjianPreview(ujian);
 }
@@ -211,16 +215,44 @@ async function cariUjian(e) {
     return;
   }
   
-  const ujian = await DB.getUjianByKode(kode);
-  if (!ujian) {
-    document.getElementById('kode-error').style.display = 'flex';
-    document.getElementById('kode-error-msg').textContent = 'Kode ujian tidak ditemukan. Periksa kembali kode Anda.';
-    document.getElementById('ujian-preview').style.display = 'none';
-    return;
+  const btnCari = document.getElementById('btn-cari');
+  if (btnCari) {
+    btnCari.disabled = true;
+    btnCari.textContent = '🔍 Mencari...';
   }
-  
-  showUjianPreview(ujian);
+
+  try {
+    let ujian = DB.getUjianByKode(kode);
+    if (!ujian && DB.client) {
+      ujian = await DB.fetchUjianByKode(kode);
+    }
+
+    if (!ujian) {
+      document.getElementById('kode-error').style.display = 'flex';
+      document.getElementById('kode-error-msg').textContent = 'Kode ujian tidak ditemukan. Periksa kembali kode Anda.';
+      document.getElementById('ujian-preview').style.display = 'none';
+      return;
+    }
+    
+    await showUjianPreview(ujian);
+  } catch (err) {
+    document.getElementById('kode-error').style.display = 'flex';
+    document.getElementById('kode-error-msg').textContent = 'Terjadi kesalahan saat memeriksa kode ujian.';
+  } finally {
+    if (btnCari) {
+      btnCari.disabled = false;
+      btnCari.textContent = '🔍 Cari Ujian';
+    }
+  }
 }
+
+// Inisialisasi awal dashboard
+renderDashboard();
+
+// H1: Render ulang otomatis saat sinkronisasi cloud selesai
+window.addEventListener('supabase-synced', () => {
+  renderDashboard();
+});
 
 // Focus ke kotak pertama
 setTimeout(() => document.getElementById('code-0')?.focus(), 100);

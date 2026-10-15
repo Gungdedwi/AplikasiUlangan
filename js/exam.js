@@ -32,8 +32,13 @@ const ExamEngine = {
     let savedJawaban = DB.getJawaban(ujian.id, siswa.userId);
     if (DB.client) {
       const cloudJawaban = await DB.fetchJawaban(ujian.id, siswa.userId);
-      if (cloudJawaban && cloudJawaban.answers && Object.keys(cloudJawaban.answers).length > 0) {
-        savedJawaban = cloudJawaban;
+      // B1: Jangan hanya cek answers.length, periksa keberadaan record cloud yang sah
+      if (cloudJawaban && (cloudJawaban.last_saved || cloudJawaban.startTime || (cloudJawaban.answers && Object.keys(cloudJawaban.answers).length > 0) || (cloudJawaban.violations && cloudJawaban.violations.length > 0))) {
+        const cloudTime = cloudJawaban.last_saved ? new Date(cloudJawaban.last_saved).getTime() : (cloudJawaban.startTime || 0);
+        const localTime = savedJawaban.lastSaved || savedJawaban.startTime || 0;
+        if (cloudTime >= localTime || !savedJawaban.startTime) {
+          savedJawaban = cloudJawaban;
+        }
       }
     }
 
@@ -42,10 +47,15 @@ const ExamEngine = {
     this.state.violations = savedJawaban.violations || [];
     this.state.violationCount = this.state.violations.length;
 
+    // B2: Validasi batas waktu dan startTime
     if (savedJawaban.startTime) {
-      const elapsed = Math.floor((Date.now() - savedJawaban.startTime) / 1000);
-      this.state.timerSeconds = Math.max(0, this.state.timerSeconds - elapsed);
-      this.state.startTime = savedJawaban.startTime;
+      const parsedStartTime = typeof savedJawaban.startTime === 'string' ? new Date(savedJawaban.startTime).getTime() : Number(savedJawaban.startTime);
+      if (!isNaN(parsedStartTime) && parsedStartTime > 0 && parsedStartTime <= Date.now() + 60000) {
+        const elapsed = Math.max(0, Math.floor((Date.now() - parsedStartTime) / 1000));
+        const totalDurationSec = (ujian.durasi || 90) * 60;
+        this.state.timerSeconds = Math.max(0, totalDurationSec - elapsed);
+        this.state.startTime = parsedStartTime;
+      }
     }
 
     // Persiapkan soal (dari cache atau Supabase cloud)
@@ -110,11 +120,13 @@ const ExamEngine = {
   startTimer(onTick, onEnd) {
     this.stopTimer();
     const durasiMenit = this.state.ujian?.durasi || 90;
-    const endTime = this.state.startTime + (durasiMenit * 60 * 1000);
+    const totalDurationMs = durasiMenit * 60 * 1000;
+    const endTime = this.state.startTime + totalDurationMs;
 
     const checkTime = () => {
       if (this.state.paused || this.state.ended) return;
-      const remaining = Math.max(0, Math.floor((endTime - Date.now()) / 1000));
+      const now = Date.now();
+      const remaining = Math.max(0, Math.min(Math.floor((endTime - now) / 1000), durasiMenit * 60));
       this.state.timerSeconds = remaining;
       if (typeof onTick === 'function') onTick(this.state.timerSeconds);
       if (this.state.timerSeconds <= 0) {
@@ -178,24 +190,57 @@ const ExamEngine = {
       this._debounceTimer = null;
     }
     if (!this.state.ujian || !this.state.siswa) return;
+
+    // B4: Mencegah request tumpang-tindih (serialisasi autosave)
+    if (this._isSaving) {
+      this._hasPendingSave = true;
+      return;
+    }
+
+    this._isSaving = true;
     const indicator = document.getElementById('autosave-indicator');
     if (indicator) {
       indicator.style.display = 'block';
+      indicator.style.color = '';
       indicator.textContent = '☁️ Menyimpan...';
     }
 
-    await DB.saveJawaban(this.state.ujian.id, this.state.siswa.userId, {
-      answers: this.state.answers,
-      flagged: this.state.flagged,
-      violations: this.state.violations,
-      startTime: this.state.startTime,
-    });
+    try {
+      const res = await DB.saveJawaban(this.state.ujian.id, this.state.siswa.userId, {
+        answers: this.state.answers,
+        flagged: this.state.flagged,
+        violations: this.state.violations,
+        startTime: this.state.startTime,
+      });
 
-    if (indicator) {
-      indicator.textContent = '☁️ Tersimpan di Cloud';
-      setTimeout(() => {
-        if (indicator) indicator.style.display = 'none';
-      }, 2000);
+      // B3: Indikator status akurat cloud vs lokal
+      if (indicator) {
+        if (res && res.cloud) {
+          indicator.textContent = '☁️ Tersimpan di Cloud';
+          indicator.style.color = 'var(--success-600, #16a34a)';
+        } else {
+          indicator.textContent = '💾 Tersimpan Lokal (Cloud offline)';
+          indicator.style.color = 'var(--warning-600, #d97706)';
+        }
+        setTimeout(() => {
+          if (indicator) indicator.style.display = 'none';
+        }, 2000);
+      }
+    } catch (err) {
+      console.warn('Autosave error:', err);
+      if (indicator) {
+        indicator.textContent = '⚠️ Gagal menyimpan ke Cloud';
+        indicator.style.color = 'var(--danger-600, #dc2626)';
+        setTimeout(() => {
+          if (indicator) indicator.style.display = 'none';
+        }, 3000);
+      }
+    } finally {
+      this._isSaving = false;
+      if (this._hasPendingSave) {
+        this._hasPendingSave = false;
+        this._scheduleAutosave(500);
+      }
     }
   },
 

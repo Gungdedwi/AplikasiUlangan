@@ -520,7 +520,7 @@ const DB = {
       const existing = userMap.get(key);
 
       const userObj = {
-        id: existing?.id || item.id || ('u-' + Utils.uuid()),
+        id: existing?.id || item.id || ('u-' + (typeof Utils !== 'undefined' && Utils.uuid ? Utils.uuid() : Math.random().toString(36).substring(2, 11))),
         username: username,
         password: hashedPass,
         name: String(item.name || item.nama || username).trim(),
@@ -901,7 +901,8 @@ const DB = {
             answers: data.answers || {},
             flagged: data.flagged || [],
             violations: data.violations || [],
-            startTime: data.start_time
+            startTime: data.start_time,
+            last_saved: data.last_saved
           };
           this.set(`jawaban_${ujianId}_${siswaId}`, item);
           return item;
@@ -928,13 +929,17 @@ const DB = {
           last_saved: new Date().toISOString()
         };
         const { error } = await this.client.from('jawaban').upsert(row);
-        if (error) console.warn('Supabase saveJawaban error:', error);
-        return !error;
+        if (error) {
+          console.warn('Supabase saveJawaban error:', error);
+          return { local: true, cloud: false, error };
+        }
+        return { local: true, cloud: true };
       } catch (e) {
         console.warn('Supabase saveJawaban network exception:', e);
+        return { local: true, cloud: false, error: e };
       }
     }
-    return true;
+    return { local: true, cloud: false };
   },
 
   // ── Hasil & Nilai Ujian Siswa (Supabase Select, Insert, Update) ──
