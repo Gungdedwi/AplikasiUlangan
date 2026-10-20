@@ -260,18 +260,18 @@ const Utils = {
 
   // === DATE/TIME ===
   isUjianAktif(ujian) {
-    if (ujian.status !== 'aktif') return false;
+    if (!ujian || ujian.status !== 'aktif') return false;
     const now = Date.now();
     const mulai = ujian.jadwalMulai ? new Date(ujian.jadwalMulai).getTime() : 0;
     const selesai = ujian.jadwalSelesai ? new Date(ujian.jadwalSelesai).getTime() : Infinity;
     return now >= mulai && now <= selesai;
   },
   isUjianBelumMulai(ujian) {
-    if (!ujian.jadwalMulai) return false;
+    if (!ujian || !ujian.jadwalMulai) return false;
     return Date.now() < new Date(ujian.jadwalMulai).getTime();
   },
   isUjianSelesai(ujian) {
-    if (!ujian.jadwalSelesai) return false;
+    if (!ujian || !ujian.jadwalSelesai) return false;
     return Date.now() > new Date(ujian.jadwalSelesai).getTime();
   },
 

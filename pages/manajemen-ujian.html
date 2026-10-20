@@ -68,9 +68,9 @@ function renderManajemenUjian() {
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
       ${[
         {label:'Total', val:ujianList.length, color:'var(--primary)'},
-        {label:'Aktif', val:ujianList.filter(u=>Utils.isUjianAktif(u)).length, color:'var(--success)'},
-        {label:'Draft', val:ujianList.filter(u=>u.status==='draft').length, color:'var(--warning)'},
-        {label:'Selesai', val:ujianList.filter(u=>Utils.isUjianSelesai(u)).length, color:'var(--gray-400)'},
+        {label:'Aktif', val:ujianList.filter(u=>u && Utils.isUjianAktif(u)).length, color:'var(--success)'},
+        {label:'Draft', val:ujianList.filter(u=>u && u.status==='draft').length, color:'var(--warning)'},
+        {label:'Selesai', val:ujianList.filter(u=>u && Utils.isUjianSelesai(u)).length, color:'var(--gray-400)'},
       ].map(s => `
       <div style="background:white;border:1px solid var(--gray-200);border-radius:var(--radius);padding:12px 20px;display:flex;align-items:center;gap:10px">
         <span style="font-size:22px;font-weight:800;color:${s.color}">${s.val}</span>
@@ -98,7 +98,7 @@ function renderManajemenUjian() {
 }
 
 function renderUjianList() {
-  const ujianList = getTeacherUjian().sort((a,b) => b.createdAt - a.createdAt);
+  const ujianList = getTeacherUjian().sort((a,b) => ((b && b.createdAt) || 0) - ((a && a.createdAt) || 0));
   const container = document.getElementById('ujian-list-container');
   if (!container) return;
 
@@ -325,7 +325,7 @@ function updateSelectedSoal() {
   if (el) el.textContent = checked.length;
 }
 
-function saveUjian(e) {
+async function saveUjian(e) {
   e.preventDefault();
   const judul = Utils.sanitizeInput(document.getElementById('u-judul').value);
   const mapel = Utils.sanitizeInput(document.getElementById('u-mapel').value);
