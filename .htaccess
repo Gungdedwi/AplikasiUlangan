@@ -1,0 +1,53 @@
+# ==============================================================================
+# KEAMANAN SERVER: PEMBLOKIRAN ENGINE PHP & HARDENING WEB STATIS
+# Aplikasi Ulangan Digital (HTML/CSS/JS + Supabase Cloud)
+# ==============================================================================
+
+# 1. Nonaktifkan engine PHP sepenuhnya (Cegah eksekusi skrip PHP di server ini)
+<IfModule mod_php.c>
+  php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+  php_flag engine off
+</IfModule>
+<IfModule mod_php8.c>
+  php_flag engine off
+</IfModule>
+
+# 2. Hapus handler file PHP agar tidak dieksekusi sebagai script
+RemoveHandler .php .phtml .php3 .php4 .php5 .php7 .php8 .phps .cgi .pl .py .sh
+RemoveType .php .phtml .php3 .php4 .php5 .php7 .php8 .phps .cgi .pl .py .sh
+
+# 3. Blokir total request ke file berakhiran PHP, CGI, shell, atau backend scripts
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Blokir akses ke file berekstensi script executable / server-side
+  RewriteRule \.(php|phtml|php[0-9]|phps|cgi|pl|py|sh|bash|exe|asp|aspx|jsp)$ - [F,L,NC]
+</IfModule>
+
+# 4. Blokir akses ke file sensitif, file konfigurasi, database, dan hidden files
+<FilesMatch "^\.">
+  Order allow,deny
+  Deny from all
+</FilesMatch>
+
+<FilesMatch "\.(sql|md|log|ini|conf|env|bak|backup|old|git|yml|yaml|json)$">
+  Order allow,deny
+  Deny from all
+</FilesMatch>
+
+# 5. Nonaktifkan penjelajahan direktori (Directory Browsing) & eksekusi CGI
+Options -Indexes -ExecCGI
+
+# 6. HTTP Security Headers
+<IfModule mod_headers.c>
+  # Lindungi dari MIME-sniffing
+  Header always set X-Content-Type-Options "nosniff"
+  # Lindungi dari serangan Clickjacking
+  Header always set X-Frame-Options "SAMEORIGIN"
+  # Aktifkan proteksi XSS pada browser lama
+  Header always set X-XSS-Protection "1; mode=block"
+  # Kebijakan Referrer yang ketat
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

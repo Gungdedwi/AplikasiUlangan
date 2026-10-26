@@ -883,8 +883,24 @@ function handleSiswaFileSelect(event) {
   const file = event.target.files ? event.target.files[0] : (event.dataTransfer ? event.dataTransfer.files[0] : null);
   if (!file) return;
 
+  // Validasi ekstensi: hanya izinkan format spreadsheet yang aman
+  const allowedExtensions = ['.xlsx', '.xls', '.csv'];
+  const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+  if (!allowedExtensions.includes(ext)) {
+    Utils.toast('Hanya file Excel (.xlsx, .xls) atau CSV (.csv) yang diperbolehkan! Format lain ditolak demi keamanan.', 'error');
+    if (event.target && event.target.value) event.target.value = '';
+    return;
+  }
+
+  // Batas ukuran file (maks 10 MB)
+  if (file.size > 10 * 1024 * 1024) {
+    Utils.toast('Ukuran file terlalu besar! Maksimal 10 MB.', 'warning');
+    if (event.target && event.target.value) event.target.value = '';
+    return;
+  }
+
   const reader = new FileReader();
-  const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+  const isExcel = ext === '.xlsx' || ext === '.xls';
 
   if (isExcel && typeof XLSX !== 'undefined') {
     reader.onload = function(e) {
