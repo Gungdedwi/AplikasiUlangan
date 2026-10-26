@@ -412,9 +412,9 @@ tbody tr:hover { background: var(--gray-50); transition: background var(--transi
    ===================================================== */
 .modal-backdrop {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.5);
+  background: rgba(15, 23, 42, 0.65);
   backdrop-filter: blur(4px);
-  z-index: 1000;
+  z-index: 9999;
   display: flex; align-items: center; justify-content: center;
   padding: 20px;
   opacity: 0;
@@ -429,9 +429,11 @@ tbody tr:hover { background: var(--gray-50); transition: background var(--transi
   max-height: 90vh;
   overflow-y: auto;
   animation: slideUp 0.3s ease forwards;
+  position: relative;
+  margin: auto;
 }
-.modal-lg { max-width: 760px; }
-.modal-xl { max-width: 960px; }
+.modal-lg { max-width: min(760px, 94vw); }
+.modal-xl { max-width: min(960px, 94vw); }
 .modal-header {
   padding: 20px 24px;
   border-bottom: 1px solid var(--gray-100);

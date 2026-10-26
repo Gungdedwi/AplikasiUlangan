@@ -191,6 +191,16 @@ const Layout = {
 
   setContent(html) {
     const el = document.getElementById('app-content');
-    if (el) el.innerHTML = html;
+    if (el) {
+      el.innerHTML = html;
+      // Pindahkan elemen modal langsung ke document.body agar tidak terpotong fixed sidebar
+      el.querySelectorAll('.modal-backdrop').forEach(modal => {
+        if (modal.id) {
+          const old = document.querySelector(`body > #${modal.id}`);
+          if (old && old !== modal) old.remove();
+        }
+        document.body.appendChild(modal);
+      });
+    }
   },
 };
