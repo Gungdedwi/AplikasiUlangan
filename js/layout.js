@@ -40,6 +40,14 @@ const Layout = {
       return null;
     }
 
+    if (!document.querySelector("link[rel*='icon']")) {
+      const link = document.createElement('link');
+      link.rel = 'icon';
+      link.type = 'image/svg+xml';
+      link.href = '../favicon.svg';
+      document.head.appendChild(link);
+    }
+
     if (activeId === 'audit-log' && typeof DB !== 'undefined' && DB.markLogsAsSeen) {
       DB.markLogsAsSeen();
     }
@@ -69,7 +77,7 @@ const Layout = {
       <div class="app-wrapper">
         <nav class="sidebar" id="sidebar">
           <div class="sidebar-logo">
-            <div class="sidebar-logo-icon">📝</div>
+            <div class="sidebar-logo-icon" style="padding:4px"><img src="../favicon.svg" alt="Logo" style="width:28px;height:28px;display:block"/></div>
             <div class="sidebar-logo-text">Ulangan Digital<span>${isAdmin ? 'Panel Administrator' : 'Portal Pendidik'}</span></div>
           </div>
           <div class="sidebar-nav">
