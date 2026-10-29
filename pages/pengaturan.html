@@ -22,6 +22,13 @@ const session = Layout.initStaff('pengaturan', ['admin', 'guru']);
 const COMMON_MAPEL = ['Informatika', 'Matematika', 'Bahasa Indonesia', 'Bahasa Inggris', 'IPA', 'IPS', 'Fisika', 'Kimia', 'Biologi', 'PJOK', 'PKN', 'Seni Budaya', 'PAI / Agama'];
 const COMMON_KELAS = ['7A', '7B', '7C', '8A', '8B', '8C', '9A', '9B', '9C', 'X IPA 1', 'XI IPA 1', 'XII IPA 1'];
 
+let userFilterRole = 'semua';
+let userFilterKelas = 'semua';
+let userSearchQuery = '';
+let userSortBy = 'default';
+let editingUserId = null;
+let parsedSiswaBatch = [];
+
 function toggleTagInInput(inputId, tag) {
   const input = document.getElementById(inputId);
   if (!input) return;
@@ -481,11 +488,6 @@ function buildSysInfo() {
 }
 
 // ── Manajemen Pengguna (Filter Peran, Kelas & No. Absen Siswa) ──
-let userFilterRole = 'semua';
-let userFilterKelas = 'semua';
-let userSearchQuery = '';
-let userSortBy = 'default';
-
 function setUserFilterRole(role) {
   userFilterRole = role;
   if (role !== 'siswa' && role !== 'semua') {
@@ -876,8 +878,6 @@ function renderFilteredUserItems() {
   }).join('');
 }
 
-let editingUserId = null;
-
 function openAddUserModal() {
   editingUserId = null;
   document.getElementById('modal-user-title').textContent = 'Tambah Pengguna';
@@ -1169,8 +1169,6 @@ function copySqlDDL() {
 }
 
 // ── Fitur Impor Siswa Massal (Excel & CSV) ──
-let parsedSiswaBatch = [];
-
 function openImportSiswaModal() {
   resetImportSiswa();
   document.getElementById('modal-import-siswa').style.display = 'flex';
