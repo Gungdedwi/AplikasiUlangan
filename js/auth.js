@@ -65,6 +65,8 @@ const Auth = {
                 role: userMeta.role,
                 email: data.user.email,
                 kelas: userMeta.kelas || '',
+                noAbsen: userMeta.no_absen || userMeta.noAbsen || '',
+                no_absen: userMeta.no_absen || userMeta.noAbsen || '',
                 active: true
               };
             } else {
@@ -117,6 +119,8 @@ const Auth = {
       name: authUser.name,
       role: authUser.role,
       kelas: authUser.kelas || '',
+      noAbsen: authUser.noAbsen || authUser.no_absen || '',
+      no_absen: authUser.noAbsen || authUser.no_absen || '',
       mapel: authUser.mapel || '',
       kelasAmpu: authUser.kelasAmpu || authUser.kelas_ampu || '',
       email: authUser.email || '',

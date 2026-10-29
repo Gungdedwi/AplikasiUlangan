@@ -37,7 +37,7 @@ function renderDashboard() {
     <div style="display:flex;align-items:center;gap:10px">
       <div style="text-align:right" class="user-info-desktop" id="user-info-desktop">
         <div style="font-size:13px;font-weight:600;color:var(--gray-800)">${Utils.escapeHtml(session.name)}</div>
-        <div style="font-size:11px;color:var(--gray-400)">${Utils.escapeHtml(session.kelas||'Siswa')}</div>
+        <div style="font-size:11px;color:var(--gray-400)">${Utils.escapeHtml([session.kelas ? 'Kelas ' + session.kelas : '', (session.noAbsen || session.no_absen) ? 'No. ' + (session.noAbsen || session.no_absen) : ''].filter(Boolean).join(' • ') || 'Siswa')}</div>
       </div>
       <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--secondary));color:white;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center">${Utils.getInitials(session.name)}</div>
       <button onclick="Auth.logout()" class="btn btn-sm btn-secondary">🚪 Keluar</button>
@@ -52,7 +52,7 @@ function renderDashboard() {
       <div style="position:relative;z-index:1">
         <div style="font-size:32px;margin-bottom:8px">👋</div>
         <h1 style="font-family:var(--font-heading);font-size:22px;font-weight:800;margin-bottom:4px">Halo, ${Utils.escapeHtml(session.name.split(' ')[0])}!</h1>
-        <p style="opacity:0.85;font-size:14px">${Utils.escapeHtml(session.kelas||'Siswa')} • Siap mengikuti ujian?</p>
+        <p style="opacity:0.85;font-size:14px">${Utils.escapeHtml([session.kelas ? 'Kelas ' + session.kelas : '', (session.noAbsen || session.no_absen) ? 'No. ' + (session.noAbsen || session.no_absen) : ''].filter(Boolean).join(' • ') || 'Siswa')} • Siap mengikuti ujian?</p>
       </div>
     </div>
 
@@ -113,6 +113,7 @@ function renderDashboard() {
     </div>` : ''}
   </div>
 </div>`;
+}
 
 function handleCodeInput(el, idx) {
   const val = el.value.toUpperCase().replace(/[^A-Z0-9]/g, '');

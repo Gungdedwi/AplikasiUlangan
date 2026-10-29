@@ -469,6 +469,11 @@ const DB = {
     const users = this.getUsers().filter(u => u.id !== user.id);
     user.id = user.id || this._uid();
     user.createdAt = user.createdAt || Date.now();
+    if (user.noAbsen !== undefined || user.no_absen !== undefined) {
+      const val = user.noAbsen !== undefined && user.noAbsen !== null ? String(user.noAbsen).trim() : (user.no_absen ? String(user.no_absen).trim() : '');
+      user.noAbsen = val;
+      user.no_absen = val;
+    }
     if (user.password && user.password.length !== 64 && typeof Utils !== 'undefined' && Utils.hashPassword) {
       user.password = await Utils.hashPassword(user.password);
     }
@@ -637,6 +642,12 @@ const DB = {
     if (!id) return;
     const existing = this.getUserById(id) || {};
     const updateData = { ...existing, ...data };
+
+    if (data.noAbsen !== undefined || data.no_absen !== undefined) {
+      const val = data.noAbsen !== undefined && data.noAbsen !== null ? String(data.noAbsen).trim() : (data.no_absen ? String(data.no_absen).trim() : '');
+      updateData.noAbsen = val;
+      updateData.no_absen = val;
+    }
 
     if (data.password) {
       if (data.password.length !== 64 && typeof Utils !== 'undefined' && Utils.hashPassword) {
@@ -1164,10 +1175,10 @@ const DB = {
     await this.addUser({ id: 'u-guru-2', username: 'guru2', password: 'guru123', name: 'Bu Sri Wulandari', role: 'guru', email: 'guru2@sekolah.id', active: true });
 
     // Siswa default
-    await this.addUser({ id: 'u-siswa-1', username: 'siswa1', password: '12345', name: 'Ahmad Fauzi', role: 'siswa', kelas: 'XI IPA 1', no_absen: '01', active: true });
-    await this.addUser({ id: 'u-siswa-2', username: 'siswa2', password: '12345', name: 'Budi Raharjo', role: 'siswa', kelas: 'XI IPA 1', no_absen: '02', active: true });
-    await this.addUser({ id: 'u-siswa-3', username: 'siswa3', password: '12345', name: 'Citra Dewi', role: 'siswa', kelas: 'XI IPA 1', no_absen: '03', active: true });
-    await this.addUser({ id: 'u-siswa-4', username: 'siswa4', password: '12345', name: 'Diana Putri', role: 'siswa', kelas: 'XI IPA 2', no_absen: '01', active: true });
+    await this.addUser({ id: 'u-siswa-1', username: 'siswa1', password: '12345', name: 'Ahmad Fauzi', role: 'siswa', kelas: 'XI IPA 1', no_absen: '01', noAbsen: '01', active: true });
+    await this.addUser({ id: 'u-siswa-2', username: 'siswa2', password: '12345', name: 'Budi Raharjo', role: 'siswa', kelas: 'XI IPA 1', no_absen: '02', noAbsen: '02', active: true });
+    await this.addUser({ id: 'u-siswa-3', username: 'siswa3', password: '12345', name: 'Citra Dewi', role: 'siswa', kelas: 'XI IPA 1', no_absen: '03', noAbsen: '03', active: true });
+    await this.addUser({ id: 'u-siswa-4', username: 'siswa4', password: '12345', name: 'Diana Putri', role: 'siswa', kelas: 'XI IPA 2', no_absen: '01', noAbsen: '01', active: true });
 
     // Soal default
     const guru = this.getUsers().find(u => u.role === 'guru') || { id: 'u-guru-1', name: 'Pak Budi Santoso' };

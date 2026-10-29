@@ -77,7 +77,7 @@ let countdownInterval;
       <!-- Identitas Siswa -->
       <div class="identity-confirm mb-4">
         <p>Anda masuk sebagai:</p>
-        <strong>👤 ${Utils.escapeHtml(session.name)} — ${Utils.escapeHtml(session.kelas||'Siswa')}</strong>
+        <strong>👤 ${Utils.escapeHtml(session.name)} — ${Utils.escapeHtml([session.kelas ? 'Kelas ' + session.kelas : '', (session.noAbsen || session.no_absen) ? 'No. ' + (session.noAbsen || session.no_absen) : ''].filter(Boolean).join(' • ') || 'Siswa')}</strong>
       </div>
 
       <!-- Instruksi dari Guru -->

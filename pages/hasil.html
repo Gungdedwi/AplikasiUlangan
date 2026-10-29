@@ -169,6 +169,10 @@ function renderHasilTable() {
         </tr></thead>
         <tbody>
           ${hasilList.map(h => {
+            const student = DB.getUserById(h.siswaId) || DB.getUsers().find(u => u.name === h.siswaName);
+            const studentKelas = student?.kelas || '';
+            const studentAbsen = student?.noAbsen || student?.no_absen || '';
+            const studentSub = [studentKelas ? 'Kelas ' + studentKelas : '', studentAbsen ? 'No. ' + studentAbsen : ''].filter(Boolean).join(' • ');
             const statusBadge = h.status === 'selesai' ? '<span class="badge badge-success">✅ Selesai</span>' :
               h.status === 'berlangsung' ? '<span class="badge badge-info">⏳ Berlangsung</span>' :
               '<span class="badge badge-danger">🚫 Ditangguhkan</span>';
@@ -177,7 +181,10 @@ function renderHasilTable() {
               <td>
                 <div style="display:flex;align-items:center;gap:8px">
                   <div style="width:32px;height:32px;border-radius:50%;background:var(--primary-pale);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">${Utils.getInitials(h.siswaName)}</div>
-                  <strong>${Utils.escapeHtml(h.siswaName)}</strong>
+                  <div>
+                    <div style="font-weight:700">${Utils.escapeHtml(h.siswaName)}</div>
+                    ${studentSub ? `<div style="font-size:11px;color:var(--gray-500)">${Utils.escapeHtml(studentSub)}</div>` : ''}
+                  </div>
                 </div>
               </td>
               <td><div style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px">${Utils.escapeHtml(h.ujianJudul)}</div></td>
@@ -441,18 +448,23 @@ function exportData() {
   hasilList = hasilList.filter(h => guruUjianIds.includes(h.ujianId));
   if (ujianId !== 'semua') hasilList = hasilList.filter(h => h.ujianId === ujianId);
   
-  const data = hasilList.map(h => ({
-    Nama: h.siswaName,
-    Ujian: h.ujianJudul,
-    Nilai: h.nilai,
-    Status: h.status,
-    Lulus: h.lulus ? 'Ya' : 'Tidak',
-    Dijawab: h.scoring?.dijawab,
-    TotalSoal: h.scoring?.totalSoal,
-    Pelanggaran: h.violationCount || 0,
-    WaktuPengerjaan: Utils.formatDuration(h.waktuPengerjaan),
-    Dikumpulkan: Utils.formatDateTime(h.submittedAt),
-  }));
+  const data = hasilList.map(h => {
+    const student = DB.getUserById(h.siswaId) || DB.getUsers().find(u => u.name === h.siswaName);
+    return {
+      Nama: h.siswaName,
+      Kelas: student?.kelas || '-',
+      NoAbsen: student?.noAbsen || student?.no_absen || '-',
+      Ujian: h.ujianJudul,
+      Nilai: h.nilai,
+      Status: h.status,
+      Lulus: h.lulus ? 'Ya' : 'Tidak',
+      Dijawab: h.scoring?.dijawab,
+      TotalSoal: h.scoring?.totalSoal,
+      Pelanggaran: h.violationCount || 0,
+      WaktuPengerjaan: Utils.formatDuration(h.waktuPengerjaan),
+      Dikumpulkan: Utils.formatDateTime(h.submittedAt),
+    };
+  });
   
   Utils.exportCSV(data, `hasil-ujian-${Date.now()}`);
   Utils.toast('Data berhasil diexport', 'success');

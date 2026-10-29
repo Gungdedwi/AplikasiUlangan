@@ -276,7 +276,7 @@ function renderPengaturan() {
         <div class="card-header">
           <div>
             <h3 class="card-title">👥 Manajemen Pengguna</h3>
-            <div style="font-size:12px;color:var(--gray-500)">Kelola akun Administrator, Guru (beserta mapel/kelas), dan Siswa</div>
+            <div style="font-size:12px;color:var(--gray-500)">Kelola akun Administrator, Guru (mapel & kelas ampu), dan Siswa berdasarkan kelas & no. absen</div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button type="button" onclick="openImportSiswaModal()" class="btn btn-sm btn-outline">📥 Import Siswa (Excel / CSV)</button>
@@ -480,52 +480,400 @@ function buildSysInfo() {
   </div>`).join('');
 }
 
+// ── Manajemen Pengguna (Filter Peran, Kelas & No. Absen Siswa) ──
+let userFilterRole = 'semua';
+let userFilterKelas = 'semua';
+let userSearchQuery = '';
+let userSortBy = 'default';
+
+function setUserFilterRole(role) {
+  userFilterRole = role;
+  if (role !== 'siswa' && role !== 'semua') {
+    userFilterKelas = 'semua';
+  }
+  renderUserList();
+}
+
+function setUserFilterKelas(kelas) {
+  userFilterKelas = kelas;
+  renderUserList();
+}
+
+function handleUserSearch(val) {
+  userSearchQuery = val;
+  renderFilteredUserItems();
+}
+
+function clearUserSearch() {
+  userSearchQuery = '';
+  const input = document.getElementById('user-search-input');
+  if (input) input.value = '';
+  renderFilteredUserItems();
+}
+
+function resetUserFilters() {
+  userFilterRole = 'semua';
+  userFilterKelas = 'semua';
+  userSearchQuery = '';
+  userSortBy = 'default';
+  renderUserList();
+}
+
+function renderClassAuditBanner(kelasName, students) {
+  if (!students || students.length === 0) return '';
+
+  const withoutAbsen = students.filter(s => !(s.noAbsen || s.no_absen || '').trim());
+  const absenNums = students
+    .map(s => parseInt(s.noAbsen || s.no_absen, 10))
+    .filter(n => !isNaN(n) && n > 0);
+
+  const freq = {};
+  students.forEach(s => {
+    const v = (s.noAbsen || s.no_absen || '').trim();
+    if (v) freq[v] = (freq[v] || 0) + 1;
+  });
+  const duplicates = Object.keys(freq).filter(k => freq[k] > 1);
+
+  const missingGaps = [];
+  if (absenNums.length > 0) {
+    const maxAbsen = Math.max(...absenNums);
+    for (let i = 1; i <= maxAbsen; i++) {
+      if (!absenNums.includes(i)) missingGaps.push(i);
+    }
+  }
+
+  const hasIssues = missingGaps.length > 0 || duplicates.length > 0 || withoutAbsen.length > 0;
+
+  if (hasIssues) {
+    return `
+      <div style="background:#FFFBEB;border:1px solid #F59E0B;border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;font-size:12px;color:#92400E">
+        <div style="font-weight:700;display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <span>⚠️ Audit Presensi Siswa Kelas ${Utils.escapeHtml(kelasName)}</span>
+          <span style="font-weight:600;color:#78350F">${students.length} Siswa Terdaftar</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:3px;font-size:11.5px">
+          ${missingGaps.length > 0 ? `
+            <div>• <strong>Nomor Absen Terlewat (Belum Terdaftar):</strong> No. <strong>${missingGaps.slice(0, 15).join(', ')}${missingGaps.length > 15 ? '...' : ''}</strong>. Periksa apakah ada siswa yang belum dimasukkan!</div>
+          ` : ''}
+          ${duplicates.length > 0 ? `
+            <div>• <strong>Nomor Absen Ganda:</strong> Ditemukan lebih dari 1 siswa dengan No. Absen <strong>${duplicates.join(', ')}</strong>.</div>
+          ` : ''}
+          ${withoutAbsen.length > 0 ? `
+            <div>• <strong>Belum Ada No. Absen:</strong> Ada <strong>${withoutAbsen.length}</strong> siswa di kelas ini yang belum diisi nomor absennya.</div>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div style="background:#F0FDF4;border:1px solid #86EFAC;border-radius:var(--radius);padding:8px 12px;margin-bottom:14px;font-size:12px;color:#166534;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        ✅ <strong>Data Kelas ${Utils.escapeHtml(kelasName)} Lengkap:</strong> ${students.length} siswa terdaftar (Nomor absen 1 s/d ${Math.max(...absenNums, students.length)} lengkap tanpa nomor terlewat).
+      </div>
+    </div>
+  `;
+}
+
 function renderUserList() {
-  const users = DB.getUsers();
   const container = document.getElementById('user-list-container');
   if (!container) return;
-  
-  if (users.length === 0) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">👥</div><div class="empty-state-title">Belum ada pengguna</div></div>';
+
+  const allUsers = DB.getUsers();
+  if (allUsers.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">👥</div><div class="empty-state-title">Belum ada pengguna</div><div class="empty-state-text">Klik tombol "Tambah Pengguna" atau "Import Siswa" di atas untuk menambahkan akun baru.</div></div>';
     return;
   }
-  
-  container.innerHTML = `
-  <div style="max-height:420px;overflow-y:auto">
-    ${users.map(u => {
-      let roleBadge = '🎓 Siswa';
-      let avatarBg = 'var(--success-light)';
-      let avatarColor = 'var(--success)';
-      if (u.role === 'admin') {
-        roleBadge = '🛡️ Administrator';
-        avatarBg = 'var(--primary-light)';
-        avatarColor = 'var(--primary-dark)';
-      } else if (u.role === 'guru') {
-        roleBadge = '👨‍🏫 Guru / Pendidik';
-        avatarBg = 'var(--primary-pale)';
-        avatarColor = 'var(--primary)';
-      } else if (u.kelas) {
-        roleBadge = '🎓 Siswa (' + Utils.escapeHtml(u.kelas) + ')';
-      }
+
+  const guruUsers = allUsers.filter(u => u.role === 'guru');
+  const siswaUsers = allUsers.filter(u => u.role === 'siswa');
+  const adminUsers = allUsers.filter(u => u.role === 'admin');
+
+  // Deteksi rombel/kelas unik siswa
+  const detectedClasses = [...new Set(siswaUsers.map(u => (u.kelas || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  const classCounts = {};
+  detectedClasses.forEach(k => {
+    classCounts[k] = siswaUsers.filter(u => (u.kelas || '').trim().toLowerCase() === k.toLowerCase()).length;
+  });
+  const unassignedSiswa = siswaUsers.filter(u => !(u.kelas || '').trim());
+  const missingAbsenCount = siswaUsers.filter(u => !(u.noAbsen || u.no_absen || '').trim()).length;
+
+  let html = `
+    <!-- Tabs Pemisah Peran Pengguna -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;border-bottom:1px solid var(--gray-200);padding-bottom:12px">
+      <button type="button" class="btn btn-sm ${userFilterRole==='semua'?'btn-primary':'btn-secondary'}" onclick="setUserFilterRole('semua')" style="font-weight:600">
+        👥 Semua Pengguna <span class="badge" style="margin-left:6px;font-size:11px;background:${userFilterRole==='semua'?'rgba(255,255,255,0.25)':'var(--gray-300)'};color:${userFilterRole==='semua'?'#fff':'var(--gray-700)'}">${allUsers.length}</span>
+      </button>
+      <button type="button" class="btn btn-sm ${userFilterRole==='guru'?'btn-primary':'btn-secondary'}" onclick="setUserFilterRole('guru')" style="font-weight:600">
+        👨‍🏫 Guru / Pendidik <span class="badge" style="margin-left:6px;font-size:11px;background:${userFilterRole==='guru'?'rgba(255,255,255,0.25)':'var(--gray-300)'};color:${userFilterRole==='guru'?'#fff':'var(--gray-700)'}">${guruUsers.length}</span>
+      </button>
+      <button type="button" class="btn btn-sm ${userFilterRole==='siswa'?'btn-primary':'btn-secondary'}" onclick="setUserFilterRole('siswa')" style="font-weight:600">
+        🎓 Siswa (Peserta) <span class="badge" style="margin-left:6px;font-size:11px;background:${userFilterRole==='siswa'?'rgba(255,255,255,0.25)':'var(--gray-300)'};color:${userFilterRole==='siswa'?'#fff':'var(--gray-700)'}">${siswaUsers.length}</span>
+      </button>
+      <button type="button" class="btn btn-sm ${userFilterRole==='admin'?'btn-primary':'btn-secondary'}" onclick="setUserFilterRole('admin')" style="font-weight:600">
+        🛡️ Administrator <span class="badge" style="margin-left:6px;font-size:11px;background:${userFilterRole==='admin'?'rgba(255,255,255,0.25)':'var(--gray-300)'};color:${userFilterRole==='admin'?'#fff':'var(--gray-700)'}">${adminUsers.length}</span>
+      </button>
+    </div>
+  `;
+
+  // Pemetaan dan Filter Kelas untuk Siswa
+  if (userFilterRole === 'siswa' || (userFilterRole === 'semua' && detectedClasses.length > 0)) {
+    html += `
+      <div style="background:var(--gray-50);border:1px solid var(--gray-200);border-radius:var(--radius);padding:12px 14px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+          <div style="font-size:12px;font-weight:700;color:var(--gray-800);display:flex;align-items:center;gap:6px">
+            <span>🏛️ Filter & Pemetaan Siswa Berdasarkan Kelas:</span>
+            <span style="font-weight:normal;color:var(--gray-500);font-size:11px">(${detectedClasses.length} kelas, total ${siswaUsers.length} siswa)</span>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${unassignedSiswa.length > 0 ? `
+              <span class="badge badge-warning" style="cursor:pointer;font-size:11px" onclick="setUserFilterKelas('__unassigned__')" title="Klik untuk memfilter siswa yang belum memiliki kelas">
+                ⚠️ ${unassignedSiswa.length} Siswa Belum Ada Kelas
+              </span>
+            ` : ''}
+            ${missingAbsenCount > 0 ? `
+              <span class="badge badge-info" style="font-size:11px" title="Siswa yang nomor absennya masih kosong">
+                ℹ️ ${missingAbsenCount} Siswa Belum Diisi No. Absen
+              </span>
+            ` : ''}
+          </div>
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+          <button type="button" class="btn btn-sm ${userFilterKelas==='semua'?'btn-primary':'btn-outline'}" onclick="setUserFilterKelas('semua')" style="border-radius:20px;padding:3px 12px;font-size:11px">
+            Semua Kelas (${siswaUsers.length})
+          </button>
+          ${detectedClasses.map(k => {
+            const count = classCounts[k] || 0;
+            const active = userFilterKelas.toLowerCase() === k.toLowerCase();
+            return `
+              <button type="button" class="btn btn-sm ${active?'btn-primary':'btn-outline'}" onclick="setUserFilterKelas('${Utils.escapeHtml(k)}')" style="border-radius:20px;padding:3px 12px;font-size:11px">
+                Kelas ${Utils.escapeHtml(k)} <strong style="margin-left:3px">(${count})</strong>
+              </button>
+            `;
+          }).join('')}
+          ${unassignedSiswa.length > 0 ? `
+            <button type="button" class="btn btn-sm ${userFilterKelas==='__unassigned__'?'btn-danger':'btn-outline'}" onclick="setUserFilterKelas('__unassigned__')" style="border-radius:20px;padding:3px 12px;font-size:11px;${userFilterKelas!=='__unassigned__'?'color:var(--danger);border-color:var(--danger)':''}">
+              ⚠️ Belum Ada Kelas (${unassignedSiswa.length})
+            </button>
+          ` : ''}
+        </div>
+      </div>
+    `;
+
+    if (userFilterKelas !== 'semua' && userFilterKelas !== '__unassigned__') {
+      const classStudents = siswaUsers.filter(u => (u.kelas || '').trim().toLowerCase() === userFilterKelas.toLowerCase());
+      html += renderClassAuditBanner(userFilterKelas, classStudents);
+    } else if (userFilterKelas === '__unassigned__') {
+      html += `
+        <div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;font-size:12px;color:#92400E">
+          ⚠️ <strong>Perhatian:</strong> Menampilkan <strong>${unassignedSiswa.length} siswa</strong> yang belum dimasukkan ke kelas manapun. Klik ikon edit (✏️) untuk menentukan kelas masing-masing siswa.
+        </div>
+      `;
+    }
+  }
+
+  // Search & Sort Bar
+  html += `
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+      <div style="flex:1;min-width:200px;position:relative">
+        <input type="text" id="user-search-input" value="${Utils.escapeHtml(userSearchQuery)}" oninput="handleUserSearch(this.value)" placeholder="🔍 Cari nama, username / NIS, kelas, atau no. absen..." class="form-control" style="font-size:13px;padding-right:30px" />
+        ${userSearchQuery ? `<button type="button" onclick="clearUserSearch()" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--gray-400);font-size:14px" title="Hapus pencarian">✕</button>` : ''}
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:12px;color:var(--gray-500);white-space:nowrap">Urutkan:</span>
+        <select class="form-control" style="width:auto;font-size:12px;padding:6px 10px" onchange="userSortBy=this.value;renderFilteredUserItems()">
+          <option value="default" ${userSortBy==='default'?'selected':''}>Urutan Bawaan</option>
+          <option value="absen_asc" ${userSortBy==='absen_asc'?'selected':''}>📋 No. Absen (1 → 99)</option>
+          <option value="absen_desc" ${userSortBy==='absen_desc'?'selected':''}>📋 No. Absen (99 → 1)</option>
+          <option value="name_asc" ${userSortBy==='name_asc'?'selected':''}>🔤 Nama (A - Z)</option>
+          <option value="kelas_asc" ${userSortBy==='kelas_asc'?'selected':''}>🏛️ Kelas & Absen</option>
+        </select>
+      </div>
+    </div>
+    <div id="user-count-info" style="font-size:12px;color:var(--gray-500);margin-bottom:8px"></div>
+    <div id="user-list-rows" style="max-height:480px;overflow-y:auto"></div>
+  `;
+
+  container.innerHTML = html;
+  renderFilteredUserItems();
+}
+
+function renderFilteredUserItems() {
+  const rowsContainer = document.getElementById('user-list-rows');
+  const countContainer = document.getElementById('user-count-info');
+  if (!rowsContainer) return;
+
+  const allUsers = DB.getUsers();
+  let list = [...allUsers];
+
+  if (userFilterRole !== 'semua') {
+    list = list.filter(u => u.role === userFilterRole);
+  }
+
+  if (userFilterRole === 'siswa' || (userFilterRole === 'semua' && userFilterKelas !== 'semua')) {
+    if (userFilterKelas === '__unassigned__') {
+      list = list.filter(u => u.role === 'siswa' && !(u.kelas || '').trim());
+    } else if (userFilterKelas !== 'semua') {
+      list = list.filter(u => (u.kelas || '').trim().toLowerCase() === userFilterKelas.toLowerCase());
+    }
+  }
+
+  if (userSearchQuery.trim()) {
+    const q = userSearchQuery.trim().toLowerCase();
+    list = list.filter(u =>
+      (u.name || '').toLowerCase().includes(q) ||
+      (u.username || '').toLowerCase().includes(q) ||
+      (u.kelas || '').toLowerCase().includes(q) ||
+      String(u.noAbsen || u.no_absen || '').toLowerCase().includes(q) ||
+      (u.mapel || '').toLowerCase().includes(q) ||
+      (u.kelasAmpu || '').toLowerCase().includes(q)
+    );
+  }
+
+  list.sort((a, b) => {
+    if (userSortBy === 'absen_asc' || (userFilterRole === 'siswa' && userSortBy === 'default')) {
+      const numA = parseInt(a.noAbsen || a.no_absen, 10);
+      const numB = parseInt(b.noAbsen || b.no_absen, 10);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      if (!isNaN(numA)) return -1;
+      if (!isNaN(numB)) return 1;
+      return (a.name || '').localeCompare(b.name || '');
+    }
+    if (userSortBy === 'absen_desc') {
+      const numA = parseInt(a.noAbsen || a.no_absen, 10);
+      const numB = parseInt(b.noAbsen || b.no_absen, 10);
+      if (!isNaN(numA) && !isNaN(numB)) return numB - numA;
+      if (!isNaN(numA)) return 1;
+      if (!isNaN(numB)) return -1;
+      return (b.name || '').localeCompare(a.name || '');
+    }
+    if (userSortBy === 'name_asc') {
+      return (a.name || '').localeCompare(b.name || '');
+    }
+    if (userSortBy === 'kelas_asc') {
+      const kA = a.kelas || '';
+      const kB = b.kelas || '';
+      if (kA !== kB) return kA.localeCompare(kB, undefined, { numeric: true });
+      const numA = parseInt(a.noAbsen || a.no_absen, 10);
+      const numB = parseInt(b.noAbsen || b.no_absen, 10);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return (a.name || '').localeCompare(b.name || '');
+    }
+    const roleOrder = { admin: 1, guru: 2, siswa: 3 };
+    const rDiff = (roleOrder[a.role] || 4) - (roleOrder[b.role] || 4);
+    if (rDiff !== 0) return rDiff;
+    if (a.role === 'siswa') {
+      const kDiff = (a.kelas || '').localeCompare(b.kelas || '', undefined, { numeric: true });
+      if (kDiff !== 0) return kDiff;
+      const numA = parseInt(a.noAbsen || a.no_absen, 10);
+      const numB = parseInt(b.noAbsen || b.no_absen, 10);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+    }
+    return (a.name || '').localeCompare(b.name || '');
+  });
+
+  if (countContainer) {
+    countContainer.innerHTML = `Menampilkan <strong>${list.length}</strong> dari total ${allUsers.length} pengguna`;
+  }
+
+  if (list.length === 0) {
+    rowsContainer.innerHTML = `
+      <div class="empty-state" style="padding:28px 12px">
+        <div class="empty-state-icon">🔍</div>
+        <div class="empty-state-title">Tidak ada pengguna yang sesuai</div>
+        <div class="empty-state-text">Coba periksa kembali kata kunci pencarian atau reset filter peran/kelas.</div>
+        <button type="button" onclick="resetUserFilters()" class="btn btn-sm btn-outline mt-3">Reset Filter</button>
+      </div>
+    `;
+    return;
+  }
+
+  rowsContainer.innerHTML = list.map(u => {
+    if (u.role === 'siswa') {
+      const absenVal = (u.noAbsen || u.no_absen || '').trim();
+      const hasAbsen = Boolean(absenVal);
+      const displayAbsen = hasAbsen ? absenVal : '-';
       return `
-      <div style="display:flex;align-items:flex-start;gap:10px;padding:12px 0;border-bottom:1px solid var(--gray-100)">
-        <div style="width:34px;height:34px;border-radius:50%;background:${avatarBg};color:${avatarColor};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;margin-top:2px">${Utils.getInitials(u.name)}</div>
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:8px;background:#fff;transition:all 0.15s">
+          <div style="min-width:44px;height:44px;border-radius:var(--radius);background:${hasAbsen ? 'var(--primary-pale)' : '#FEE2E2'};color:${hasAbsen ? 'var(--primary)' : 'var(--danger)'};display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;flex-shrink:0;border:1px solid ${hasAbsen ? 'var(--primary-light)' : '#FECACA'}" title="${hasAbsen ? 'Nomor Absen ' + Utils.escapeHtml(displayAbsen) : 'Nomor Absen belum diisi'}">
+            <span style="font-size:8.5px;text-transform:uppercase;letter-spacing:0.5px;color:var(--gray-500);font-weight:700">ABSEN</span>
+            <span style="font-size:14px;line-height:1.1">${Utils.escapeHtml(displayAbsen)}</span>
+          </div>
+
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span style="font-size:13.5px;font-weight:700;color:var(--gray-900)">${Utils.escapeHtml(u.name)}</span>
+              <span class="badge ${u.kelas ? 'badge-primary' : 'badge-warning'}" style="font-size:10.5px">
+                🏛️ ${u.kelas ? 'Kelas ' + Utils.escapeHtml(u.kelas) : 'Belum Ada Kelas'}
+              </span>
+              ${!hasAbsen ? '<span class="badge badge-danger" style="font-size:10px">⚠️ Absen Belum Diisi</span>' : ''}
+            </div>
+            <div style="font-size:11.5px;color:var(--gray-500);margin-top:2px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span>NIS / User: <code>${Utils.escapeHtml(u.username)}</code></span>
+              <span>•</span>
+              <span>No. Absen: <strong>${Utils.escapeHtml(displayAbsen)}</strong></span>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:4px;flex-shrink:0">
+            <button onclick="openEditUserModal('${u.id}')" class="btn btn-icon btn-sm btn-outline" title="Edit Siswa & No Absen">✏️</button>
+            <button onclick="deleteUser('${u.id}')" class="btn btn-icon btn-sm" style="background:var(--danger-light);color:var(--danger)" title="Hapus Siswa">🗑️</button>
+          </div>
+        </div>
+      `;
+    }
+
+    if (u.role === 'guru') {
+      return `
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:8px;background:#fff">
+          <div style="width:44px;height:44px;border-radius:50%;background:var(--primary-pale);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0">
+            ${Utils.getInitials(u.name)}
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span style="font-size:13.5px;font-weight:700;color:var(--gray-900)">${Utils.escapeHtml(u.name)}</span>
+              <span class="badge badge-primary" style="font-size:10.5px">👨‍🏫 Guru / Pendidik</span>
+            </div>
+            <div style="font-size:11.5px;color:var(--gray-500);margin-top:2px">
+              <code>@${Utils.escapeHtml(u.username)}</code> ${u.email ? '• ' + Utils.escapeHtml(u.email) : ''}
+            </div>
+            <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">
+              ${u.mapel ? `<span class="badge badge-primary" style="font-size:10px">📚 ${Utils.escapeHtml(u.mapel)}</span>` : '<span class="badge badge-gray" style="font-size:10px">📚 Mapel: -</span>'}
+              ${u.kelasAmpu ? `<span class="badge badge-success" style="font-size:10px">👥 Kelas Ampu: ${Utils.escapeHtml(u.kelasAmpu)}</span>` : '<span class="badge badge-gray" style="font-size:10px">👥 Kelas Ampu: -</span>'}
+            </div>
+          </div>
+          <div style="display:flex;gap:4px;flex-shrink:0">
+            <button onclick="openEditUserModal('${u.id}')" class="btn btn-icon btn-sm btn-outline" title="Edit Guru">✏️</button>
+            ${u.id !== session.userId ? `<button onclick="deleteUser('${u.id}')" class="btn btn-icon btn-sm" style="background:var(--danger-light);color:var(--danger)" title="Hapus Guru">🗑️</button>` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    return `
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:8px;background:#F8FAFC">
+        <div style="width:44px;height:44px;border-radius:50%;background:var(--gray-800);color:white;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">
+          🛡️
+        </div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:600;color:var(--gray-800)">${Utils.escapeHtml(u.name)}</div>
-          <div style="font-size:11px;color:var(--gray-500)">${Utils.escapeHtml(u.username)} • ${roleBadge}</div>
-          ${u.role === 'guru' ? `
-          <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">
-            ${u.mapel ? `<span class="badge badge-primary" style="font-size:10px">📚 ${Utils.escapeHtml(u.mapel)}</span>` : '<span class="badge badge-gray" style="font-size:10px">📚 Mapel: -</span>'}
-            ${u.kelasAmpu ? `<span class="badge badge-success" style="font-size:10px">👥 Kelas: ${Utils.escapeHtml(u.kelasAmpu)}</span>` : '<span class="badge badge-gray" style="font-size:10px">👥 Kelas: -</span>'}
-          </div>` : ''}
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-size:13.5px;font-weight:700;color:var(--gray-900)">${Utils.escapeHtml(u.name)}</span>
+            <span class="badge badge-dark" style="font-size:10.5px">🛡️ Administrator</span>
+          </div>
+          <div style="font-size:11.5px;color:var(--gray-500);margin-top:2px">
+            <code>@${Utils.escapeHtml(u.username)}</code> • Akses Penuh Sistem
+          </div>
         </div>
-        <div style="display:flex;gap:4px">
-          <button onclick="openEditUserModal('${u.id}')" class="btn btn-icon btn-sm btn-outline" title="Edit">✏️</button>
-          ${u.username !== 'admin' && u.id !== session.userId ? `<button onclick="deleteUser('${u.id}')" class="btn btn-icon btn-sm" style="background:var(--danger-light);color:var(--danger)" title="Hapus">🗑️</button>` : ''}
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          <button onclick="openEditUserModal('${u.id}')" class="btn btn-icon btn-sm btn-outline" title="Edit Admin">✏️</button>
+          ${u.username !== 'admin' && u.id !== session.userId ? `<button onclick="deleteUser('${u.id}')" class="btn btn-icon btn-sm" style="background:var(--danger-light);color:var(--danger)" title="Hapus Admin">🗑️</button>` : ''}
         </div>
-      </div>`;
-    }).join('')}
-  </div>`;
+      </div>
+    `;
+  }).join('');
 }
 
 let editingUserId = null;
@@ -533,7 +881,11 @@ let editingUserId = null;
 function openAddUserModal() {
   editingUserId = null;
   document.getElementById('modal-user-title').textContent = 'Tambah Pengguna';
-  document.getElementById('add-user-body').innerHTML = buildUserForm();
+  const defaultUser = {
+    role: userFilterRole === 'guru' ? 'guru' : 'siswa',
+    kelas: (userFilterKelas !== 'semua' && userFilterKelas !== '__unassigned__') ? userFilterKelas : ''
+  };
+  document.getElementById('add-user-body').innerHTML = buildUserForm(defaultUser);
   document.getElementById('modal-add-user').style.display = 'flex';
   toggleRoleFields();
 }
@@ -552,8 +904,10 @@ function openEditUserModal(id) {
 }
 
 function buildUserForm(user = null) {
-  const isEdit = Boolean(user);
-  const role = user?.role || 'siswa';
+  const isEdit = Boolean(user && user.id);
+  const role = user?.role || (userFilterRole === 'guru' ? 'guru' : 'siswa');
+  const userNoAbsen = user?.noAbsen || user?.no_absen || '';
+
   return `
     <form onsubmit="saveUser(event)" novalidate>
       <div class="form-group">
@@ -567,25 +921,37 @@ function buildUserForm(user = null) {
       </div>
       <div class="form-group">
         <label class="form-label">Nama Lengkap <span class="required">*</span></label>
-        <input type="text" id="nu-name" class="form-control" placeholder="Masukkan nama lengkap" value="${Utils.escapeHtml(user?.name||'')}" maxlength="100"/>
+        <input type="text" id="nu-name" class="form-control" placeholder="Masukkan nama lengkap siswa / pengajar" value="${Utils.escapeHtml(user?.name||'')}" maxlength="100"/>
       </div>
       <div class="form-group">
-        <label class="form-label">Username <span class="required">*</span></label>
-        <input type="text" id="nu-username" class="form-control" placeholder="Username unik (tanpa spasi)" value="${Utils.escapeHtml(user?.username||'')}" ${isEdit?'readonly style="background:var(--gray-100);cursor:not-allowed"':''} maxlength="50"/>
+        <label class="form-label">Username / NIS <span class="required">*</span></label>
+        <input type="text" id="nu-username" class="form-control" placeholder="Username unik atau NIS (tanpa spasi)" value="${Utils.escapeHtml(user?.username||'')}" ${isEdit?'readonly style="background:var(--gray-100);cursor:not-allowed"':''} maxlength="50"/>
       </div>
       <div class="form-group">
         <label class="form-label">${isEdit ? 'Password / PIN Baru (kosongkan jika tidak diubah)' : 'Password / PIN <span class="required">*</span>'}</label>
-        <input type="text" id="nu-password" class="form-control" placeholder="${isEdit ? 'Biarkan kosong jika tidak diubah' : 'Minimal 4 karakter'}" maxlength="100"/>
+        <input type="text" id="nu-password" class="form-control" placeholder="${isEdit ? 'Biarkan kosong jika tidak diubah' : 'Minimal 4 karakter (misal: 12345)'}" maxlength="100"/>
       </div>
 
-      <!-- Siswa: Kelas -->
-      <div class="form-group" id="field-siswa-kelas">
-        <label class="form-label">Kelas Siswa</label>
-        <input type="text" id="nu-kelas" class="form-control" value="${Utils.escapeHtml(user?.kelas||'')}" placeholder="e.g. XI IPA 1" maxlength="50"/>
+      <!-- Khusus Siswa: Kelas & No. Absen -->
+      <div id="field-siswa-group" style="${role==='siswa'?'display:block':'display:none'}">
+        <div class="form-group" id="field-siswa-kelas">
+          <label class="form-label">Kelas Siswa</label>
+          <div style="font-size:11px;color:var(--gray-500);margin-bottom:6px">Pilihan cepat kelas:</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
+            ${COMMON_KELAS.map(k => `<button type="button" class="btn btn-ghost btn-xs" style="padding:2px 8px;font-size:11px;border:1px solid var(--gray-300)" onclick="document.getElementById('nu-kelas').value='${k}'">${k}</button>`).join('')}
+          </div>
+          <input type="text" id="nu-kelas" class="form-control" value="${Utils.escapeHtml(user?.kelas||'')}" placeholder="e.g. 7A, 8B, XI IPA 1" maxlength="50"/>
+        </div>
+
+        <div class="form-group" id="field-siswa-absen">
+          <label class="form-label">Nomor Absen Siswa</label>
+          <input type="number" id="nu-no-absen" class="form-control" min="1" max="999" value="${Utils.escapeHtml(String(userNoAbsen))}" placeholder="e.g. 1, 2, 15" />
+          <div style="font-size:11px;color:var(--gray-500);margin-top:4px">Nomor presensi / nomor urut siswa di kelas (akan diurutkan otomatis)</div>
+        </div>
       </div>
 
-      <!-- Guru: Mapel & Kelas Ampuan -->
-      <div class="form-group" id="field-guru-mapel" style="display:none">
+      <!-- Khusus Guru: Mapel & Kelas Ampuan -->
+      <div class="form-group" id="field-guru-mapel" style="${role==='guru'?'display:block':'display:none'}">
         <label class="form-label">Mata Pelajaran yang Diampu</label>
         <div style="font-size:11px;color:var(--gray-500);margin-bottom:6px">Pilihan cepat mata pelajaran:</div>
         <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
@@ -594,7 +960,7 @@ function buildUserForm(user = null) {
         <input type="text" id="nu-mapel" class="form-control" value="${Utils.escapeHtml(user?.mapel||'')}" placeholder="e.g. Informatika, Matematika" maxlength="200"/>
       </div>
 
-      <div class="form-group" id="field-guru-kelas" style="display:none">
+      <div class="form-group" id="field-guru-kelas" style="${role==='guru'?'display:block':'display:none'}">
         <label class="form-label">Kelas yang Diampu</label>
         <div style="font-size:11px;color:var(--gray-500);margin-bottom:6px">Pilihan cepat kelas:</div>
         <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
@@ -618,11 +984,11 @@ function closeUserModal() {
 function toggleRoleFields() {
   const hiddenRole = document.getElementById('nu-role-hidden')?.value;
   const role = hiddenRole || document.getElementById('nu-role')?.value || 'siswa';
-  const siswaField = document.getElementById('field-siswa-kelas');
+  const siswaGroup = document.getElementById('field-siswa-group');
   const guruMapelField = document.getElementById('field-guru-mapel');
   const guruKelasField = document.getElementById('field-guru-kelas');
 
-  if (siswaField) siswaField.style.display = role === 'siswa' ? 'block' : 'none';
+  if (siswaGroup) siswaGroup.style.display = role === 'siswa' ? 'block' : 'none';
   if (guruMapelField) guruMapelField.style.display = role === 'guru' ? 'block' : 'none';
   if (guruKelasField) guruKelasField.style.display = role === 'guru' ? 'block' : 'none';
 }
@@ -638,7 +1004,8 @@ async function saveUser(e) {
   const password = document.getElementById('nu-password').value;
   const hiddenRole = document.getElementById('nu-role-hidden')?.value;
   const role = hiddenRole || document.getElementById('nu-role').value;
-  const kelas = role === 'siswa' ? Utils.sanitizeInput(document.getElementById('nu-kelas').value) : '';
+  const kelas = role === 'siswa' ? Utils.sanitizeInput(document.getElementById('nu-kelas')?.value || '') : '';
+  const noAbsen = role === 'siswa' ? Utils.sanitizeInput(document.getElementById('nu-no-absen')?.value || '') : '';
   const mapel = role === 'guru' ? Utils.sanitizeInput(document.getElementById('nu-mapel')?.value || '') : '';
   const kelasAmpu = role === 'guru' ? Utils.sanitizeInput(document.getElementById('nu-kelas-ampu')?.value || '') : '';
   
@@ -650,7 +1017,18 @@ async function saveUser(e) {
     const existing = DB.getUsers().find(u => u.username === username);
     if (existing) { Utils.toast('Username sudah digunakan', 'error'); return; }
 
-    await DB.addUser({ name, username, password, role, kelas, mapel, kelasAmpu, active: true });
+    await DB.addUser({
+      name,
+      username,
+      password,
+      role,
+      kelas,
+      noAbsen,
+      no_absen: noAbsen,
+      mapel,
+      kelasAmpu,
+      active: true
+    });
     Utils.toast(`Akun ${role.toUpperCase()} "${name}" berhasil dibuat`, 'success');
   } else {
     const existing = (DB.getUserById ? DB.getUserById(editingUserId) : null) || DB.getUsers().find(u => u.id === editingUserId);
@@ -659,6 +1037,8 @@ async function saveUser(e) {
       username: existing?.username || username,
       role,
       kelas,
+      noAbsen,
+      no_absen: noAbsen,
       mapel,
       kelasAmpu
     };
@@ -671,7 +1051,7 @@ async function saveUser(e) {
     }
     await DB.updateUser(editingUserId, updateData);
     if (session && editingUserId === session.userId) {
-      Auth.updateSession({ name, role, kelas, mapel, kelasAmpu });
+      Auth.updateSession({ name, role, kelas, noAbsen, no_absen: noAbsen, mapel, kelasAmpu });
     }
     Utils.toast(`Akun "${name}" berhasil diperbarui`, 'success');
   }
@@ -987,6 +1367,7 @@ function processParsedSiswaData(rawRows, fileName) {
         password,
         kelas,
         noAbsen,
+        no_absen: noAbsen,
         role: 'siswa',
         active: true
       });
