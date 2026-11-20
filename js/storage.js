@@ -802,6 +802,56 @@ const DB = {
     return soal;
   },
 
+  async addSoalBatch(soalList = [], onProgress) {
+    if (!Array.isArray(soalList) || soalList.length === 0) {
+      return { inserted: 0, total: 0 };
+    }
+
+    const currentList = this.getSoal();
+    const preparedSoal = soalList.map(s => {
+      const item = { ...s };
+      item.id = item.id || (typeof Utils !== 'undefined' && Utils.uuid ? Utils.uuid() : this._uid());
+      item.createdAt = item.createdAt || Date.now();
+      item.bobot = Number(item.bobot) >= 0 ? Number(item.bobot) : 1;
+      item.tingkat = item.tingkat || 'sedang';
+      item.pilihan = Array.isArray(item.pilihan) ? item.pilihan : [];
+      return item;
+    });
+
+    const combined = [...currentList, ...preparedSoal];
+    this.setSoal(combined);
+
+    let insertedCount = 0;
+    if (this.client) {
+      const CHUNK_SIZE = 50;
+      for (let i = 0; i < preparedSoal.length; i += CHUNK_SIZE) {
+        const chunk = preparedSoal.slice(i, i + CHUNK_SIZE);
+        const snakeChunk = chunk.map(s => this._toSnakeSoal(s));
+        try {
+          const { error } = await this.client.from('soal').insert(snakeChunk);
+          if (!error) {
+            insertedCount += chunk.length;
+          } else {
+            console.error('Supabase addSoalBatch chunk error:', error);
+          }
+        } catch (err) {
+          console.error('Supabase addSoalBatch exception:', err);
+        }
+
+        if (typeof onProgress === 'function') {
+          onProgress(Math.min(i + CHUNK_SIZE, preparedSoal.length), preparedSoal.length);
+        }
+      }
+    } else {
+      insertedCount = preparedSoal.length;
+      if (typeof onProgress === 'function') {
+        onProgress(preparedSoal.length, preparedSoal.length);
+      }
+    }
+
+    return { inserted: insertedCount, total: preparedSoal.length };
+  },
+
   async updateSoal(id, data) {
     const list = this.getSoal().map(s => s.id === id ? { ...s, ...data, updatedAt: Date.now() } : s);
     this.setSoal(list);

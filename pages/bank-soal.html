@@ -9,6 +9,7 @@
 </head>
 <body>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="../js/storage.js?v=2.2"></script>
 <script src="../js/utils.js?v=2.2"></script>
 <script src="../js/auth.js?v=2.2"></script>
@@ -67,7 +68,12 @@ function renderBankSoal() {
             : 'Kelola kumpulan soal untuk ujian (Akses Administrator)'}
         </p>
       </div>
-      <button onclick="openSoalModal()" class="btn btn-primary">➕ Tambah Soal</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="openImportSoalModal()" class="btn btn-outline" style="background:white;border-color:var(--primary);color:var(--primary);display:flex;align-items:center;gap:6px">
+          <span>📥</span> Import Soal (Excel / CSV)
+        </button>
+        <button onclick="openSoalModal()" class="btn btn-primary">➕ Tambah Soal</button>
+      </div>
     </div>
 
     <!-- Filter & Search -->
@@ -118,6 +124,106 @@ function renderBankSoal() {
         <button class="modal-close" onclick="closeSoalModal()">✕</button>
       </div>
       <div class="modal-body" id="modal-soal-body">
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Import Soal (Excel / CSV) -->
+  <div id="modal-import-soal" class="modal-backdrop" style="display:none">
+    <div class="modal modal-lg" style="max-width:920px">
+      <div class="modal-header">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:24px">📥</span>
+          <div>
+            <h3 class="modal-title" style="margin:0">Import Bank Soal (Excel / CSV)</h3>
+            <div style="font-size:12px;color:var(--gray-500)">Tambah puluhan hingga ratusan soal sekaligus dalam satu kali upload</div>
+          </div>
+        </div>
+        <button class="modal-close" onclick="closeImportSoalModal()">✕</button>
+      </div>
+      <div class="modal-body" style="max-height:78vh;overflow-y:auto">
+        <!-- Step 1: Download Template -->
+        <div class="alert alert-info" style="margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+          <div>
+            <div style="font-weight:700;color:var(--primary-dark);font-size:14px">💡 Belum memiliki format file soal?</div>
+            <div style="font-size:12px;color:var(--gray-600)">Unduh template resmi yang sudah terformat rapi untuk PG, Benar/Salah, Isian, dan Uraian:</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" onclick="downloadTemplateExcelSoal()" class="btn btn-sm btn-primary">📥 Unduh Template Excel (.xlsx)</button>
+            <button type="button" onclick="downloadTemplateCSVSoal()" class="btn btn-sm btn-outline">📄 Unduh Template CSV</button>
+          </div>
+        </div>
+
+        <!-- Default Settings (Fallback) -->
+        <div style="background:var(--gray-50);border:1px solid var(--gray-200);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px">
+          <div style="font-size:13px;font-weight:700;color:var(--gray-700);margin-bottom:8px">⚙️ Pengaturan Default (Digunakan jika kolom di file kosong):</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:12px">
+            <div>
+              <label class="form-label" style="font-size:12px">Mata Pelajaran Default</label>
+              <input type="text" id="import-default-mapel" class="form-control form-control-sm" value="${Utils.escapeHtml(myMapels[0] || 'Umum')}" placeholder="e.g. Matematika"/>
+            </div>
+            <div>
+              <label class="form-label" style="font-size:12px">Kelas Default</label>
+              <input type="text" id="import-default-kelas" class="form-control form-control-sm" value="${Utils.escapeHtml(myKelas[0] || 'Semua')}" placeholder="e.g. XI IPA 1"/>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: Upload Dropzone -->
+        <div id="drop-zone-soal" style="border:2px dashed var(--primary);border-radius:var(--radius);padding:32px 20px;text-align:center;background:#F8FAFC;cursor:pointer;transition:all 0.2s" onclick="document.getElementById('file-input-soal').click()" ondragover="handleSoalDragOver(event)" ondragleave="handleSoalDragLeave(event)" ondrop="handleSoalDrop(event)">
+          <div style="font-size:38px;margin-bottom:8px">📂</div>
+          <div style="font-size:15px;font-weight:700;color:var(--gray-800)">Klik untuk pilih file Excel / CSV, atau seret file ke sini</div>
+          <div style="font-size:12px;color:var(--gray-500);margin-top:4px">Mendukung format spreadsheet <strong>.xlsx, .xls, .csv</strong> (Maksimal 10 MB)</div>
+          <input type="file" id="file-input-soal" accept=".xlsx, .xls, .csv" style="display:none" onchange="handleSoalFileSelect(event)" />
+        </div>
+
+        <!-- Step 3: Preview Container -->
+        <div id="import-soal-preview-container" style="display:none;margin-top:20px">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:18px">📊</span>
+              <span id="import-soal-summary-text" style="font-weight:700;font-size:14px;color:var(--gray-800)">0 Soal Terdeteksi</span>
+              <span id="import-soal-file-badge" class="badge badge-primary">soal.xlsx</span>
+            </div>
+            <button type="button" onclick="resetImportSoalFile()" class="btn btn-sm btn-ghost" style="color:var(--danger)">✕ Ganti File</button>
+          </div>
+
+          <!-- Breakdown pills -->
+          <div id="import-soal-breakdown" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"></div>
+
+          <!-- Preview Table -->
+          <div style="max-height:280px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius)">
+            <table class="table" style="font-size:12px;margin:0">
+              <thead style="position:sticky;top:0;background:var(--gray-100);z-index:2">
+                <tr>
+                  <th style="width:36px">#</th>
+                  <th style="width:70px">Tipe</th>
+                  <th>Pertanyaan</th>
+                  <th style="width:120px">Pilihan / Kunci</th>
+                  <th style="width:60px">Bobot</th>
+                  <th style="width:100px">Status</th>
+                </tr>
+              </thead>
+              <tbody id="import-soal-preview-tbody"></tbody>
+            </table>
+          </div>
+
+          <!-- Upload Progress Bar -->
+          <div id="import-soal-progress-container" style="display:none;margin-top:16px">
+            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px">
+              <span id="import-soal-progress-text">Menyimpan soal ke database...</span>
+              <span id="import-soal-progress-percent">0%</span>
+            </div>
+            <div style="height:8px;background:var(--gray-200);border-radius:4px;overflow:hidden">
+              <div id="import-soal-progress-bar" style="height:100%;width:0%;background:var(--primary);transition:width 0.2s"></div>
+            </div>
+          </div>
+
+          <div class="modal-footer" style="padding:16px 0 0;border:none;margin-top:16px;display:flex;justify-content:flex-end;gap:10px">
+            <button type="button" onclick="closeImportSoalModal()" class="btn btn-secondary">Batal</button>
+            <button type="button" id="btn-submit-import-soal" onclick="executeImportSoal()" class="btn btn-primary">🚀 Impor Sekarang</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>`;
@@ -377,10 +483,521 @@ function hapusSoal(id) {
   });
 }
 
+// ── Logika Import Soal (Excel / CSV) ──
+let importedSoalCache = [];
+
+function openImportSoalModal() {
+  importedSoalCache = [];
+  const modal = document.getElementById('modal-import-soal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  resetImportSoalFile();
+
+  const defMapel = document.getElementById('import-default-mapel');
+  const defKelas = document.getElementById('import-default-kelas');
+  if (defMapel && !defMapel.value) defMapel.value = myMapels[0] || 'Umum';
+  if (defKelas && !defKelas.value) defKelas.value = myKelas[0] || 'Semua';
+}
+
+function closeImportSoalModal() {
+  const modal = document.getElementById('modal-import-soal');
+  if (modal) modal.style.display = 'none';
+  importedSoalCache = [];
+}
+
+function resetImportSoalFile() {
+  importedSoalCache = [];
+  const fileInput = document.getElementById('file-input-soal');
+  if (fileInput) fileInput.value = '';
+  const dropZone = document.getElementById('drop-zone-soal');
+  if (dropZone) dropZone.style.display = 'block';
+  const previewContainer = document.getElementById('import-soal-preview-container');
+  if (previewContainer) previewContainer.style.display = 'none';
+  const progressContainer = document.getElementById('import-soal-progress-container');
+  if (progressContainer) progressContainer.style.display = 'none';
+}
+
+function handleSoalDragOver(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const dz = document.getElementById('drop-zone-soal');
+  if (dz) {
+    dz.style.borderColor = 'var(--primary-dark)';
+    dz.style.background = 'var(--primary-pale)';
+  }
+}
+
+function handleSoalDragLeave(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const dz = document.getElementById('drop-zone-soal');
+  if (dz) {
+    dz.style.borderColor = 'var(--primary)';
+    dz.style.background = '#F8FAFC';
+  }
+}
+
+function handleSoalDrop(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  handleSoalDragLeave(e);
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    handleSoalFile(e.dataTransfer.files[0]);
+  }
+}
+
+function handleSoalFileSelect(e) {
+  if (e.target && e.target.files && e.target.files.length > 0) {
+    handleSoalFile(e.target.files[0]);
+  }
+}
+
+function handleSoalFile(file) {
+  if (!file) return;
+
+  const allowed = ['.xlsx', '.xls', '.csv'];
+  const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+  if (!allowed.includes(ext)) {
+    Utils.toast('Format file tidak didukung! Gunakan file Excel (.xlsx, .xls) atau CSV (.csv)', 'error');
+    return;
+  }
+
+  if (file.size > 10 * 1024 * 1024) {
+    Utils.toast('Ukuran file maksimal 10 MB!', 'error');
+    return;
+  }
+
+  const badge = document.getElementById('import-soal-file-badge');
+  if (badge) badge.textContent = file.name;
+
+  const reader = new FileReader();
+  const isExcel = ext === '.xlsx' || ext === '.xls';
+
+  if (isExcel && typeof XLSX !== 'undefined') {
+    reader.onload = function(e) {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const rawJson = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+        processImportedSoalRows(rawJson);
+      } catch (err) {
+        console.error('Error parsing Excel:', err);
+        Utils.toast('Gagal membaca file Excel: ' + (err.message || err), 'error');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    reader.onload = function(e) {
+      try {
+        const text = e.target.result;
+        const rows = parseCSVTextSoal(text);
+        processImportedSoalRows(rows);
+      } catch (err) {
+        console.error('Error parsing CSV:', err);
+        Utils.toast('Gagal membaca file CSV: ' + (err.message || err), 'error');
+      }
+    };
+    reader.readAsText(file);
+  }
+}
+
+function parseCSVTextSoal(csvText) {
+  const lines = csvText.split(/\r\n|\n/).filter(line => line.trim());
+  if (lines.length < 2) return [];
+
+  const parseLine = (text) => {
+    const result = [];
+    let insideQuote = false;
+    let entry = '';
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      if (char === '"' || char === "'") {
+        insideQuote = !insideQuote;
+      } else if (char === ',' && !insideQuote) {
+        result.push(entry.trim());
+        entry = '';
+      } else {
+        entry += char;
+      }
+    }
+    result.push(entry.trim());
+    return result;
+  };
+
+  const headers = parseLine(lines[0]);
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseLine(lines[i]);
+    const row = {};
+    headers.forEach((h, idx) => {
+      row[h] = values[idx] || '';
+    });
+    rows.push(row);
+  }
+  return rows;
+}
+
+function processImportedSoalRows(rawRows) {
+  if (!Array.isArray(rawRows) || rawRows.length === 0) {
+    Utils.toast('File tidak memiliki baris data soal yang dapat dibaca', 'warning');
+    return;
+  }
+
+  const defaultMapel = (document.getElementById('import-default-mapel')?.value || myMapels[0] || 'Umum').trim();
+  const defaultKelas = (document.getElementById('import-default-kelas')?.value || myKelas[0] || 'Semua').trim();
+
+  const parsedList = rawRows.map((row, idx) => {
+    const getVal = (regex) => {
+      for (const k of Object.keys(row)) {
+        if (regex.test(k.trim())) return String(row[k]).trim();
+      }
+      return '';
+    };
+
+    let rawTipe = getVal(/(tipe|jenis|type)/i).toLowerCase();
+    let tipe = 'pg';
+    if (rawTipe.includes('b/s') || rawTipe.includes('bs') || rawTipe.includes('benar') || rawTipe.includes('salah')) {
+      tipe = 'bs';
+    } else if (rawTipe.includes('isian') || rawTipe.includes('singkat') || rawTipe.includes('essay')) {
+      tipe = 'isian';
+    } else if (rawTipe.includes('uraian') || rawTipe.includes('panjang') || rawTipe.includes('manual')) {
+      tipe = 'uraian';
+    } else {
+      tipe = 'pg';
+    }
+
+    const pertanyaan = getVal(/(pertanyaan|soal|soal\s*ujian|text|question)/i);
+    const optA = getVal(/(pilihan\s*a|opsi\s*a|^a$)/i);
+    const optB = getVal(/(pilihan\s*b|opsi\s*b|^b$)/i);
+    const optC = getVal(/(pilihan\s*c|opsi\s*c|^c$)/i);
+    const optD = getVal(/(pilihan\s*d|opsi\s*d|^d$)/i);
+    const optE = getVal(/(pilihan\s*e|opsi\s*e|^e$)/i);
+
+    let rawKunci = getVal(/(kunci\s*jawaban|kunci|jawaban|answer|key)/i);
+    let jawaban = rawKunci;
+    if (tipe === 'pg') {
+      jawaban = rawKunci.toUpperCase().trim();
+      if (!['A', 'B', 'C', 'D', 'E'].includes(jawaban)) {
+        // Coba cocokan jika isi kunci adalah teks salah satu pilihan
+        if (optA && rawKunci.toLowerCase() === optA.toLowerCase()) jawaban = 'A';
+        else if (optB && rawKunci.toLowerCase() === optB.toLowerCase()) jawaban = 'B';
+        else if (optC && rawKunci.toLowerCase() === optC.toLowerCase()) jawaban = 'C';
+        else if (optD && rawKunci.toLowerCase() === optD.toLowerCase()) jawaban = 'D';
+        else if (optE && rawKunci.toLowerCase() === optE.toLowerCase()) jawaban = 'E';
+        else jawaban = 'A'; // default fallback
+      }
+    } else if (tipe === 'bs') {
+      const lower = rawKunci.toLowerCase();
+      if (lower.includes('benar') || lower === 'b' || lower === 'true' || lower === '1') {
+        jawaban = 'Benar';
+      } else {
+        jawaban = 'Salah';
+      }
+    }
+
+    let bobot = parseInt(getVal(/(bobot|poin|nilai|weight|score)/i), 10);
+    if (isNaN(bobot) || bobot <= 0) {
+      bobot = tipe === 'uraian' ? 5 : tipe === 'isian' ? 2 : 1;
+    }
+
+    let tingkat = getVal(/(tingkat|kesulitan|level|difficulty)/i).toLowerCase();
+    if (!['mudah', 'sedang', 'sulit'].includes(tingkat)) {
+      tingkat = 'sedang';
+    }
+
+    const mapel = getVal(/(mapel|mata\s*pelajaran|subject)/i) || defaultMapel;
+    const kelas = getVal(/(kelas|grade|class)/i) || defaultKelas;
+    const bab = getVal(/(bab|materi|topik|chapter|topic)/i) || 'Umum';
+
+    // Susun pilihan untuk PG
+    let pilihan = [];
+    if (tipe === 'pg') {
+      pilihan = [optA, optB, optC, optD, optE].filter(Boolean);
+      if (pilihan.length < 2) {
+        // jika pilihan kurang dari 2, buat minimal dummy atau tandai invalid
+        pilihan = [optA || 'Pilihan A', optB || 'Pilihan B', optC || 'Pilihan C', optD || 'Pilihan D'];
+      }
+    }
+
+    // Validasi kelengkapan
+    let isValid = true;
+    let errorMsg = '';
+    if (!pertanyaan) {
+      isValid = false;
+      errorMsg = 'Pertanyaan kosong';
+    } else if (tipe === 'pg' && (!jawaban || !['A', 'B', 'C', 'D', 'E'].includes(jawaban))) {
+      isValid = false;
+      errorMsg = 'Kunci PG harus A/B/C/D/E';
+    } else if (!mapel) {
+      isValid = false;
+      errorMsg = 'Mapel belum diisi';
+    }
+
+    return {
+      rowNum: idx + 1,
+      tipe,
+      pertanyaan,
+      pilihan,
+      jawaban,
+      bobot,
+      tingkat,
+      mapel,
+      kelas,
+      bab,
+      pembuatId: session.userId,
+      isValid,
+      errorMsg
+    };
+  });
+
+  importedSoalCache = parsedList;
+  renderImportSoalPreview();
+}
+
+function renderImportSoalPreview() {
+  const list = importedSoalCache;
+  const dropZone = document.getElementById('drop-zone-soal');
+  const preview = document.getElementById('import-soal-preview-container');
+  const tbody = document.getElementById('import-soal-preview-tbody');
+  const summary = document.getElementById('import-soal-summary-text');
+  const breakdown = document.getElementById('import-soal-breakdown');
+  const submitBtn = document.getElementById('btn-submit-import-soal');
+
+  if (!preview || !tbody) return;
+
+  if (dropZone) dropZone.style.display = 'none';
+  preview.style.display = 'block';
+
+  const validCount = list.filter(s => s.isValid).length;
+  const invalidCount = list.length - validCount;
+
+  if (summary) {
+    summary.innerHTML = `${list.length} Soal Terdeteksi (${validCount} valid${invalidCount > 0 ? `, <span style="color:var(--danger)">${invalidCount} perlu dicek</span>` : ''})`;
+  }
+
+  // Hitung sebaran tipe
+  const counts = { pg: 0, bs: 0, isian: 0, uraian: 0 };
+  list.forEach(s => { if (counts[s.tipe] !== undefined) counts[s.tipe]++; });
+
+  if (breakdown) {
+    breakdown.innerHTML = `
+      <span class="badge badge-primary">🔘 ${counts.pg} Pilihan Ganda</span>
+      <span class="badge badge-success">✅ ${counts.bs} Benar/Salah</span>
+      <span class="badge badge-warning">✏️ ${counts.isian} Isian</span>
+      <span class="badge badge-info">📝 ${counts.uraian} Uraian</span>
+    `;
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = validCount === 0;
+    submitBtn.textContent = `🚀 Impor Sekarang (${validCount} Soal Valid)`;
+  }
+
+  tbody.innerHTML = list.map(s => `
+    <tr style="${s.isValid ? '' : 'background:#FEF2F2'}">
+      <td style="font-weight:700;color:var(--gray-500)">#${s.rowNum}</td>
+      <td>
+        <span class="badge ${s.tipe === 'pg' ? 'badge-primary' : s.tipe === 'bs' ? 'badge-success' : s.tipe === 'isian' ? 'badge-warning' : 'badge-info'}" style="font-size:10px">
+          ${s.tipe.toUpperCase()}
+        </span>
+      </td>
+      <td>
+        <div style="font-weight:600;color:var(--gray-800);max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.escapeHtml(s.pertanyaan)}</div>
+        <div style="font-size:11px;color:var(--gray-500)">${Utils.escapeHtml(s.mapel)} • Kelas: ${Utils.escapeHtml(s.kelas)} • ${Utils.escapeHtml(s.bab)}</div>
+      </td>
+      <td>
+        ${s.tipe === 'pg' ? `<span class="badge badge-primary">Kunci: ${s.jawaban}</span> (${s.pilihan.length} Opsi)` : `<span class="badge badge-gray">Kunci: ${Utils.escapeHtml(s.jawaban || '-')}</span>`}
+      </td>
+      <td><span class="badge badge-gray">${s.bobot}</span></td>
+      <td>
+        ${s.isValid 
+          ? `<span class="badge badge-success">✓ Siap</span>` 
+          : `<span class="badge badge-danger" title="${Utils.escapeHtml(s.errorMsg)}">✕ ${Utils.escapeHtml(s.errorMsg)}</span>`}
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function executeImportSoal() {
+  const validSoal = importedSoalCache.filter(s => s.isValid).map(s => ({
+    tipe: s.tipe,
+    mapel: s.mapel,
+    kelas: s.kelas,
+    bab: s.bab,
+    pertanyaan: s.pertanyaan,
+    pilihan: s.pilihan,
+    jawaban: s.jawaban,
+    bobot: s.bobot,
+    tingkat: s.tingkat,
+    pembuatId: session.userId,
+  }));
+
+  if (validSoal.length === 0) {
+    Utils.toast('Tidak ada soal valid yang dapat diimpor!', 'warning');
+    return;
+  }
+
+  const submitBtn = document.getElementById('btn-submit-import-soal');
+  const progressContainer = document.getElementById('import-soal-progress-container');
+  const progressBar = document.getElementById('import-soal-progress-bar');
+  const progressText = document.getElementById('import-soal-progress-text');
+  const progressPercent = document.getElementById('import-soal-progress-percent');
+
+  if (submitBtn) submitBtn.disabled = true;
+  if (progressContainer) progressContainer.style.display = 'block';
+
+  try {
+    const res = await DB.addSoalBatch(validSoal, (current, total) => {
+      const pct = Math.round((current / total) * 100);
+      if (progressBar) progressBar.style.width = pct + '%';
+      if (progressPercent) progressPercent.textContent = pct + '%';
+      if (progressText) progressText.textContent = `Menyimpan ${current} dari ${total} soal...`;
+    });
+
+    Utils.toast(`🎉 Berhasil mengimpor ${res.inserted || validSoal.length} soal ke Bank Soal!`, 'success');
+    closeImportSoalModal();
+    renderSoalList();
+  } catch (err) {
+    console.error('Error batch importing soal:', err);
+    Utils.toast('Gagal mengimpor soal: ' + (err.message || err), 'error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+function downloadTemplateExcelSoal() {
+  const sampleData = [
+    {
+      "No": 1,
+      "Tipe": "pg",
+      "Pertanyaan": "Jika f(x) = 2x + 5, maka nilai f(4) adalah...",
+      "Pilihan A": "11",
+      "Pilihan B": "13",
+      "Pilihan C": "15",
+      "Pilihan D": "17",
+      "Pilihan E": "19",
+      "Kunci Jawaban": "B",
+      "Bobot": 1,
+      "Tingkat": "mudah",
+      "Mapel": "Matematika",
+      "Kelas": "XI",
+      "Bab": "Fungsi Aljabar"
+    },
+    {
+      "No": 2,
+      "Tipe": "pg",
+      "Pertanyaan": "Berapakah hasil dari 15% dari 200?",
+      "Pilihan A": "20",
+      "Pilihan B": "25",
+      "Pilihan C": "30",
+      "Pilihan D": "35",
+      "Pilihan E": "40",
+      "Kunci Jawaban": "C",
+      "Bobot": 1,
+      "Tingkat": "mudah",
+      "Mapel": "Matematika",
+      "Kelas": "XI",
+      "Bab": "Aritmatika"
+    },
+    {
+      "No": 3,
+      "Tipe": "bs",
+      "Pertanyaan": "Bilangan prima terkecil adalah angka 2 dan merupakan satu-satunya bilangan prima genap.",
+      "Pilihan A": "",
+      "Pilihan B": "",
+      "Pilihan C": "",
+      "Pilihan D": "",
+      "Pilihan E": "",
+      "Kunci Jawaban": "Benar",
+      "Bobot": 1,
+      "Tingkat": "mudah",
+      "Mapel": "Matematika",
+      "Kelas": "XI",
+      "Bab": "Teori Bilangan"
+    },
+    {
+      "No": 4,
+      "Tipe": "isian",
+      "Pertanyaan": "Jika 4x - 8 = 16, maka nilai x adalah...",
+      "Pilihan A": "",
+      "Pilihan B": "",
+      "Pilihan C": "",
+      "Pilihan D": "",
+      "Pilihan E": "",
+      "Kunci Jawaban": "6",
+      "Bobot": 2,
+      "Tingkat": "sedang",
+      "Mapel": "Matematika",
+      "Kelas": "XI",
+      "Bab": "Persamaan Linear"
+    },
+    {
+      "No": 5,
+      "Tipe": "uraian",
+      "Pertanyaan": "Jelaskan perbedaan mendasar antara barisan aritmatika dan barisan geometri serta berikan masing-masing 1 contoh!",
+      "Pilihan A": "",
+      "Pilihan B": "",
+      "Pilihan C": "",
+      "Pilihan D": "",
+      "Pilihan E": "",
+      "Kunci Jawaban": "Barisan aritmatika memiliki beda (selisih) tetap contoh 2,4,6,8. Barisan geometri memiliki rasio (perbandingan) tetap contoh 2,4,8,16.",
+      "Bobot": 5,
+      "Tingkat": "sedang",
+      "Mapel": "Matematika",
+      "Kelas": "XI",
+      "Bab": "Barisan & Deret"
+    }
+  ];
+
+  if (typeof XLSX !== 'undefined') {
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template Soal");
+    XLSX.writeFile(wb, "template_bank_soal.xlsx");
+    Utils.toast('Template Excel (.xlsx) berhasil diunduh', 'success');
+  } else {
+    downloadTemplateCSVSoal();
+  }
+}
+
+function downloadTemplateCSVSoal() {
+  const headers = ["No","Tipe","Pertanyaan","Pilihan A","Pilihan B","Pilihan C","Pilihan D","Pilihan E","Kunci Jawaban","Bobot","Tingkat","Mapel","Kelas","Bab"];
+  const rows = [
+    [1, "pg", "Jika f(x) = 2x + 5, maka nilai f(4) adalah...", "11", "13", "15", "17", "19", "B", 1, "mudah", "Matematika", "XI", "Fungsi Aljabar"],
+    [2, "bs", "Bilangan prima terkecil adalah angka 2.", "", "", "", "", "", "Benar", 1, "mudah", "Matematika", "XI", "Teori Bilangan"],
+    [3, "isian", "Jika 4x - 8 = 16, maka nilai x adalah...", "", "", "", "", "", "6", 2, "sedang", "Matematika", "XI", "Persamaan Linear"],
+    [4, "uraian", "Jelaskan rumus keliling dan luas lingkaran!", "", "", "", "", "", "Keliling = 2*pi*r, Luas = pi*r^2", 5, "sedang", "Matematika", "XI", "Geometri"]
+  ];
+
+  const escapeCSV = val => {
+    const s = String(val === null || val === undefined ? '' : val);
+    if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  };
+
+  const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + 
+    [headers.map(escapeCSV).join(','), ...rows.map(r => r.map(escapeCSV).join(','))].join('\r\n');
+
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", "template_bank_soal.csv");
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  Utils.toast('Template CSV berhasil diunduh', 'success');
+}
+
 // Close modal on backdrop click
 document.addEventListener('click', e => {
   const modal = document.getElementById('modal-soal');
   if (modal && e.target === modal) closeSoalModal();
+  const modalImport = document.getElementById('modal-import-soal');
+  if (modalImport && e.target === modalImport) closeImportSoalModal();
 });
 </script>
 </body>
