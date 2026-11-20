@@ -58,24 +58,24 @@ const ExamEngine = {
       }
     }
 
-    // Persiapkan soal (dari cache atau Supabase cloud)
+    // Persiapkan soal (dari cache atau Supabase cloud khusus siswa - tanpa kolom jawaban)
     const soalIds = ujian.soalIds || ujian.soal_ids || [];
     let soalList = (await Promise.all(soalIds.map(id => DB.getSoalById(id)))).filter(Boolean);
     if (soalList.length === 0 && DB.client) {
-      await DB.fetchSoal();
-      soalList = (await Promise.all(soalIds.map(id => DB.getSoalById(id)))).filter(Boolean);
+      const fetched = await DB.fetchSoal(true);
+      soalList = (await Promise.all(soalIds.map(id => DB.getSoalById(id) || fetched.find(s => s.id === id)))).filter(Boolean);
     }
     if (ujian.acakSoal !== false && ujian.acak_soal !== false) soalList = Utils.shuffle(soalList);
     const maxSoal = ujian.jumlahSoal || ujian.jumlah_soal;
     if (maxSoal && soalList.length > maxSoal) soalList = soalList.slice(0, maxSoal);
 
-    // Kunci jawaban disimpan terpisah agar TIDAK bocor di state browser siswa
+    // Kunci jawaban disimpan terpisah jika ada (untuk fallback offline)
     this._kunciJawabanMap = {};
     soalList.forEach(s => {
-      this._kunciJawabanMap[s.id] = s.jawaban;
+      if (s.jawaban) this._kunciJawabanMap[s.id] = s.jawaban;
     });
 
-    // Sanitasi soalList untuk siswa: hapus kunci jawaban dari memory inspection
+    // Sanitasi soalList untuk siswa: pastikan kunci jawaban tidak ada di memori soal
     this.state.soalList = soalList.map(s => {
       const sanitized = { ...s };
       delete sanitized.jawaban;
@@ -313,33 +313,53 @@ const ExamEngine = {
     const siswa = this.state.siswa;
     const elapsed = Math.floor((Date.now() - this.state.startTime) / 1000);
 
-    // Ambil kunci jawaban yang terlindungi untuk proses penilaian
-    let kunciMap = this._kunciJawabanMap || {};
-    const soalIds = this.state.soalList.map(s => s.id);
-    if (Object.keys(kunciMap).length === 0 && DB.fetchKunciJawaban) {
-      kunciMap = await DB.fetchKunciJawaban(soalIds);
+    // 1. Coba submit & penilaian resmi di sisi Server via PostgreSQL RPC (submit_ujian)
+    // Ini mengeliminasi risiko manipulasi nilai di browser dan tidak membocorkan kunci jawaban
+    let serverResult = null;
+    if (DB.client && DB.submitUjian) {
+      serverResult = await DB.submitUjian({
+        hasilId: this.state.hasilId,
+        ujianId: ujian.id,
+        siswaId: siswa.userId,
+        siswaName: siswa.name,
+        answers: this.state.answers,
+        waktuPengerjaan: elapsed,
+        violations: this.state.violations,
+        violationCount: this.state.violationCount,
+        reason
+      });
     }
 
-    const scoringSoalList = this.state.soalList.map(s => ({
-      ...s,
-      jawaban: kunciMap[s.id] || ''
-    }));
+    let scoring = null;
+    if (serverResult && serverResult.success && serverResult.scoring) {
+      scoring = serverResult.scoring;
+    } else {
+      // 2. Fallback offline: penilaian di sisi client jika tanpa koneksi cloud
+      let kunciMap = this._kunciJawabanMap || {};
+      const soalIds = this.state.soalList.map(s => s.id);
+      if (Object.keys(kunciMap).length === 0 && DB.fetchKunciJawaban) {
+        kunciMap = await DB.fetchKunciJawaban(soalIds);
+      }
 
-    // Hitung nilai otomatis
-    const scoring = Utils.hitungNilai(ujian, { answers: this.state.answers }, scoringSoalList);
+      const scoringSoalList = this.state.soalList.map(s => ({
+        ...s,
+        jawaban: kunciMap[s.id] || ''
+      }));
 
-    // Kirim hasil ujian ke database Supabase
-    await DB.updateHasil(this.state.hasilId, {
-      status: reason === 'suspended' ? 'ditangguhkan' : 'selesai',
-      nilai: scoring.nilai,
-      lulus: scoring.lulus,
-      scoring,
-      waktuPengerjaan: elapsed,
-      violationCount: this.state.violationCount,
-      violations: this.state.violations,
-      submitReason: reason,
-      answers: this.state.answers,
-    });
+      scoring = Utils.hitungNilai(ujian, { answers: this.state.answers }, scoringSoalList);
+
+      await DB.updateHasil(this.state.hasilId, {
+        status: reason === 'suspended' ? 'ditangguhkan' : 'selesai',
+        nilai: scoring.nilai,
+        lulus: scoring.lulus,
+        scoring,
+        waktuPengerjaan: elapsed,
+        violationCount: this.state.violationCount,
+        violations: this.state.violations,
+        submitReason: reason,
+        answers: this.state.answers,
+      });
+    }
 
     // Catat log submit ke audit_logs Supabase
     await DB.addLog({

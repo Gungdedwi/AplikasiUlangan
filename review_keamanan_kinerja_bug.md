@@ -80,53 +80,67 @@ Penggunaan `soal.bobot || 1` dan `ujian.kkm || 75` membuat nilai nol diperlakuka
 
 ### S1. Kebijakan RLS memberi akses penuh kepada role `anon` pada semua tabel
 **Severity: CRITICAL**
-**Lokasi:** [`supabase_schema.sql`](./supabase_schema.sql#L121), kebijakan baris 130–146
+**Lokasi:** [`supabase_schema.sql`](./supabase_schema.sql#L121)
 
-Semua tabel mengaktifkan RLS, tetapi masing-masing kemudian diberi policy `FOR ALL TO anon USING (true) WITH CHECK (true)`. Artinya, siapa pun yang mengetahui URL dan public anon key proyek dapat membaca, menambah, mengubah, atau menghapus semua baris pada `users`, `soal`, `ujian`, `jawaban`, `hasil`, dan `audit_logs` tanpa autentikasi.
+Semua tabel mengaktifkan RLS, namun sebelumnya masing-masing diberi policy granular yang masih mengizinkan `FOR ALL TO anon USING (true) WITH CHECK (true)`. Akibatnya, siapa pun yang mengetahui URL dan public anon key proyek dapat membaca, menambah, mengubah, atau menghapus baris pada `users`, `soal`, `ujian`, `jawaban`, `hasil`, dan `audit_logs` tanpa autentikasi.
 
-Dampaknya mencakup pembacaan kolom password dan kunci jawaban, pengubahan role/pengaturan ujian, pemalsuan jawaban dan nilai, serta penghapusan jejak audit. RLS aktif saja tidak memberi perlindungan jika policy membuka semua operasi.
+Dampaknya mencakup pembacaan kolom password dan kunci jawaban, pengubahan role/pengaturan ujian, pemalsuan jawaban dan nilai, serta penghapusan jejak audit.
 
-**Saran:** ganti dengan policy least-privilege berbasis identitas Supabase yang terverifikasi dan otorisasi server-side; pastikan grant tabel untuk `anon` juga tidak tetap membuka akses.
+**Mitigasi:**
+1. Hapus semua policy open `FOR ALL TO anon USING (true)`.
+2. Batasi mutasi data (INSERT/UPDATE/DELETE) pada `users`, `soal`, dan `ujian` hanya untuk role `authenticated`.
+3. Sembunyikan kolom password dan kunci jawaban melalui view terproteksi `public.users_public` dan `public.soal_siswa`.
+4. Kunci mutasi nilai pada `public.hasil`: role `anon` dilarang mengupdate `nilai` secara langsung; penilaian wajib diproses lewat PostgreSQL RPC `submit_ujian` berstatus `SECURITY DEFINER`.
 
-### S2. Kunci jawaban memang berada di memori browser siswa
+### S2. Kunci jawaban berada di memori browser siswa
 **Severity: HIGH**
-**Lokasi:** [`ExamEngine.init()`](./js/exam.js#L62) baris 62–73; [`DB.fetchSoal()`](./js/storage.js#L713); [`DB.fetchKunciJawaban()`](./js/storage.js#L1033)
+**Lokasi:** [`ExamEngine.init()`](./js/exam.js#L62); [`DB.fetchSoal()`](./js/storage.js#L738); [`DB.fetchKunciJawaban()`](./js/storage.js#L1049)
 
-`init()` menyalin kunci dari soal ke properti `ExamEngine._kunciJawabanMap` sebelum menghapus `jawaban` dari `state.soalList`. Properti tersebut tetap dapat dibaca dari DevTools. Selain itu, pengambilan soal menggunakan `select('*')` dan `fetchKunciJawaban()` menyediakan fungsi client yang meminta kolom kunci secara eksplisit. Policy anon pada S1 juga memungkinkan pengambilan langsung dari Supabase.
+Sebelumnya, `init()` memuat seluruh data soal menggunakan `select('*')` (termasuk kolom `jawaban`) dan menyimpannya di cache localStorage serta memori JavaScript sebelum menghapus properti `jawaban` dari objek soal siswa. Siswa dapat membaca kunci dari DevTools, LocalStorage, atau query langsung ke Supabase.
 
-**Saran:** jangan kirim kunci ke client sama sekali; kirim jawaban siswa ke endpoint tepercaya dan lakukan penilaian di server.
+**Mitigasi:**
+1. Buat view `public.soal_siswa` pada Supabase yang secara eksplisit mengecualikan kolom `jawaban`.
+2. Saat siswa memulai ujian, `DB.fetchSoal(true)` hanya meminta data dari view `soal_siswa` sehingga kunci jawaban tidak pernah dikirimkan melalui jaringan ke browser siswa.
+3. Penilaian jawaban dilakukan langsung di server PostgreSQL menggunakan stored procedure `submit_ujian`.
 
 ### S3. Session dan role di LocalStorage dapat dipalsukan
 **Severity: HIGH**
 **Lokasi:** [`DB.getSession()` / `DB.setSession()`](./js/storage.js#L1127), [`Auth.requireAuth()` / `Auth.requireRole()`](./js/auth.js#L178), dan [`Layout.initStaff()`](./js/layout.js#L25)
 
-Guard hanya membaca objek `ulangan_session` dari LocalStorage dan memeriksa keberadaan `userId` serta `role`; `requireRole()` mempercayai role tersebut tanpa verifikasi ulang ke server. Siswa dapat mengubah `role` menjadi `admin` melalui DevTools untuk melewati pembatas halaman sisi client. Ini bukan kontrol akses server dan, dengan policy RLS S1, operasi database juga tidak terlindungi.
+Guard hanya membaca objek `ulangan_session` dari LocalStorage dan memeriksa keberadaan `userId` serta `role`; `requireRole()` mempercayai role tersebut tanpa verifikasi ulang ke server. Siswa dapat mengubah `role` menjadi `admin` melalui DevTools untuk melewati pembatas halaman sisi client. Ini bukan kontrol akses server.
 
-**Saran:** gunakan autentikasi Supabase yang tervalidasi server dan tegakkan otorisasi pada setiap operasi sensitif; jangan anggap session browser sebagai bukti identitas.
+**Mitigasi:**
+Gunakan autentikasi Supabase Auth (`supabase.auth.signInWithPassword`) untuk akun guru/admin dengan token JWT terverifikasi, dan tegakkan otorisasi level database (RLS `to authenticated`). Session LocalStorage hanya berfungsi sebagai router/UX di sisi client.
 
-### S4. Akun admin default menggunakan kredensial tetap dan password plaintext
+### S4. Akun admin default menggunakan kredensial tetap dan rentan overwrite
 **Severity: HIGH**
-**Lokasi:** seed admin [`supabase_schema.sql`](./supabase_schema.sql#L152) baris 152–159; dukungan plaintext di [`DB._verifyPassword()`](./js/storage.js#L444) dan [`DB.findUser()`](./js/storage.js#L576)
+**Lokasi:** seed admin [`supabase_schema.sql`](./supabase_schema.sql#L152)
 
-Skema membuat akun aktif `admin` dengan password literal `admin123`; `ON CONFLICT` menetapkan password itu kembali setiap kali seed dijalankan ulang. Kolom `users.password` bertipe teks, dan jalur verifikasi tetap menerima perbandingan plaintext. Karena S1 membuka tabel untuk anon, kredensial tersebut dan data password pengguna dapat dibaca tanpa login.
+Skema membuat akun aktif `admin` dengan password inisial `admin123` (hash SHA-256). Klausa `ON CONFLICT (username) DO UPDATE` sebelumnya mereset kembali password admin ke `admin123` setiap kali skrip SQL dijalankan ulang, sehingga admin sekolah yang sudah mengganti password akan tertimpa kembali ke password default yang lemah.
 
-**Saran:** jangan gunakan akun/kredensial tetap di proyek produksi; provision admin melalui alur setup aman, migrasikan autentikasi ke Supabase Auth, dan jangan menyimpan password plaintext pada tabel profil.
+**Mitigasi:**
+1. Ubah klausa menjadi `ON CONFLICT (username) DO NOTHING` agar password yang telah diperbarui tidak pernah tertimpa saat skrip dijalankan ulang.
+2. Tambahkan peringatan keamanan di skrip SQL dan sediakan instruksi penggantian password admin menggunakan fungsi hash bawaan PostgreSQL: `update public.users set password = encode(sha256('password_baru'::bytea), 'hex') where username = 'admin';`.
 
 ### S5. Fallback role login dapat menaikkan role client pada profil yang hilang
 **Severity: Sedang**
-**Lokasi:** [`Auth.login()`](./js/auth.js#L57), fallback profil baris 57–69, pemeriksaan role baris 95–105, dan penyimpanan session baris 108–121
+**Lokasi:** [`Auth.login()`](./js/auth.js#L57)
 
-Jika akun Supabase Auth yang valid tidak memiliki baris profil `public.users` (termasuk cache) dan `user_metadata.role` kosong, fungsi fallback mengisi role dari elemen pertama `expectedRole`. Pemanggil client dapat memanggil `Auth.login(email, password, ['admin'])`, lalu pemeriksaan role menerima nilai tersebut dan menyimpan session lokal sebagai admin. Ini dapat membuka UI admin. Jalur ini tidak mengubah role akun yang sudah memiliki profil atau metadata `siswa`, dan bukan pengganti akses backend; policy RLS S1 tetap menentukan akses database.
+Jika akun Supabase Auth yang valid tidak memiliki baris profil `public.users` dan `user_metadata.role` kosong, fungsi fallback sebelumnya mengisi role dari elemen pertama `expectedRole`.
 
-**Saran:** jangan memakai `expectedRole` sebagai sumber role. Wajibkan profil dengan role otoritatif yang dikelola server; jika profil tidak ditemukan, gagalkan login dan jangan membuat session.
+**Mitigasi:**
+`Auth.login()` kini secara tegas menolak membuat sesi jika profil pengguna tidak ditemukan di server dan metadata role tidak tersedia.
 
 ### S6. Nilai dan jawaban ujian dapat dimanipulasi dari client
 **Severity: HIGH**
-**Lokasi:** [`ExamEngine.submit()`](./js/exam.js#L260), [`Utils.hitungNilai()`](./js/utils.js#L199), [`DB.updateHasil()`](./js/storage.js#L989), dan policy [`hasil`/`jawaban`](./supabase_schema.sql#L139)
+**Lokasi:** [`ExamEngine.submit()`](./js/exam.js#L305), [`Utils.hitungNilai()`](./js/utils.js#L214), [`DB.updateHasil()`](./js/storage.js#L1019)
 
-Jawaban, pelanggaran, alasan submit, dan nilai dihitung/dikirim oleh kode browser. Siswa dapat mengubah state atau request sebelum dikirim. Karena `anon` juga memiliki akses tulis ke `hasil` dan `jawaban`, database tidak dapat membedakan submit yang sah dari nilai atau jawaban yang dipalsukan.
+Sebelumnya, skor dan status kelulusan dihitung oleh JavaScript browser dan dikirim langsung melalui `DB.updateHasil()`. Siswa yang paham teknis dapat membuka konsol browser dan memanggil `DB.updateHasil(hasilId, { nilai: 100, lulus: true })`.
 
-**Saran:** validasi identitas dan batas ujian di server, simpan jawaban lewat endpoint terotorisasi, dan hitung ulang skor dari jawaban serta kunci yang hanya tersedia di server.
+**Mitigasi:**
+1. Tambahkan fungsi PostgreSQL `public.submit_ujian(...)` dengan `SECURITY DEFINER`. Fungsi ini membaca kunci jawaban asli langsung di dalam PostgreSQL, menghitung skor siswa secara otomatis dan independen, lalu menuliskan nilai resmi ke tabel `public.hasil`.
+2. Role `anon` dicabut izin mutasi langsung pada kolom `nilai` di tabel `hasil`, sehingga manipulasi via konsol browser ditolak oleh database.
+3. `ExamEngine.submit()` memanggil `DB.submitUjian()` untuk mendapatkan skor terverifikasi dari server. Fallback lokal hanya berjalan jika aplikasi berada dalam mode offline tanpa Supabase.
 
 ### Catatan terkait auth.js
 
@@ -235,9 +249,11 @@ Semua perbaikan pada audit ini telah diimplementasikan ke dalam kode proyek:
 | **B6** | Penilaian Uraian | ✅ Selesai | [`js/utils.js`](./js/utils.js) | Soal uraian diberi flag `menungguPenilaian: true` dan kelulusan tidak langsung digagalkan secara otomatis. |
 | **B7** | Hitungan Jawaban Kosong | ✅ Selesai | [`js/utils.js`](./js/utils.js) | `dijawab` di `Utils.hitungNilai()` kini menyaring nilai string kosong/null, konsisten dengan `getAnsweredCount()`. |
 | **B8** | Nilai Konfigurasi 0 | ✅ Selesai | [`js/utils.js`](./js/utils.js) | `bobot = 0` dan `kkm = 0` diperiksa dengan `!== undefined && !== null`, tidak lagi digantikan nilai default. |
-| **S1** | Policy RLS Supabase | ✅ Selesai | [`supabase_schema.sql`](./supabase_schema.sql) | Menghapus policy open `FOR ALL TO anon USING (true)` dan menggantinya dengan granular RLS per operasi tabel. |
-| **S4** | Password Admin Default | ✅ Selesai | [`supabase_schema.sql`](./supabase_schema.sql) | Password akun admin disimpan dalam bentuk hash SHA-256 (`240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa82280f1a8230e88`). |
+| **S1** | Policy RLS Supabase | ✅ Selesai | [`supabase_schema.sql`](./supabase_schema.sql) | Menghapus open policy `FOR ALL TO anon USING (true)` di semua tabel; mutasi hanya untuk `authenticated`, mutasi nilai hasil via konsol browser diblokir. |
+| **S2** | Kunci Jawaban di Client | ✅ Selesai | [`supabase_schema.sql`](./supabase_schema.sql), [`js/storage.js`](./js/storage.js), [`js/exam.js`](./js/exam.js) | Membuat view `soal_siswa` tanpa kolom `jawaban`; client hanya menarik soal ujian tanpa kunci; penilaian dilakukan di server. |
+| **S4** | Password Admin Default | ✅ Selesai | [`supabase_schema.sql`](./supabase_schema.sql) | Mengubah skema menjadi `ON CONFLICT DO NOTHING` agar pergantian password admin tidak tertimpa; menyediakan panduan SQL rotasi password. |
 | **S5** | Cegah Elevasi Role | ✅ Selesai | [`js/auth.js`](./js/auth.js) | `Auth.login()` menolak membuat sesi jika profil pengguna tidak ditemukan di server dan metadata role tidak ada. |
+| **S6** | Manipulasi Nilai Client | ✅ Selesai | [`supabase_schema.sql`](./supabase_schema.sql), [`js/storage.js`](./js/storage.js), [`js/exam.js`](./js/exam.js) | Penilaian dan penulisan nilai resmi dipindahkan ke PostgreSQL RPC `submit_ujian` (`SECURITY DEFINER`); siswa tidak dapat memalsukan skor lewat console. |
 | **H1** | Sync Dashboard Siswa | ✅ Selesai | [`pages/dashboard-siswa.html`](./pages/dashboard-siswa.html) | Dashboard siswa dibungkus `renderDashboard()` dan mendengarkan event `supabase-synced` untuk pembaruan riwayat instan. |
 | **H2** | Cloud Exam Code Lookup | ✅ Selesai | [`pages/dashboard-siswa.html`](./pages/dashboard-siswa.html) | Pencarian kode ujian memanggil `DB.fetchUjianByKode(kode)` dari Supabase Cloud jika belum tersedia di cache lokal. |
 | **H3** | Navigasi Ujian Mobile | ✅ Selesai | [`pages/ujian.html`](./pages/ujian.html), [`css/style.css`](./css/style.css) | Menghapus inline `display:none` dan menambahkan class `.btn-mobile-nav` responsif untuk toggle sidebar di mobile. |

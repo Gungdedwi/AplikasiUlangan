@@ -584,7 +584,22 @@ const DB = {
 
     if (this.client) {
       try {
-        // Query Supabase dengan batas waktu 4 detik agar tidak menggantung jika jaringan lambat
+        // Coba verifikasi via RPC login_user (Server-Side verification tanpa mengekspos hash password ke client)
+        const passHash = typeof Utils !== 'undefined' && Utils.hashPassword ? await Utils.hashPassword(password) : password;
+        const { data: rpcData, error: rpcError } = await this.client.rpc('login_user', {
+          p_username: cleanUsername,
+          p_password_hash: passHash
+        });
+
+        if (!rpcError && rpcData && rpcData.success && rpcData.user) {
+          const camelUser = this._toCamelUser(rpcData.user);
+          const cached = this.getUsers().filter(u => u.id !== camelUser.id);
+          cached.push(camelUser);
+          this.setUsers(cached);
+          return camelUser;
+        }
+
+        // Fallback: Query tabel users langsung jika RPC belum terpasang
         const queryPromise = this.client
           .from('users')
           .select('*')
@@ -600,7 +615,6 @@ const DB = {
         if (!error && data) {
           const passValid = await this._verifyPassword(password, data.password);
           if (passValid) {
-            // Jika akun masih password plaintext lama, upgrade otomatis ke SHA-256
             if (data.password === password) {
               this._upgradeUserPassword(data.id, password).catch(() => {});
             }
@@ -721,13 +735,31 @@ const DB = {
   getSoal() { return this.get('soal') || []; },
   setSoal(s) { return this.set('soal', s); },
 
-  async fetchSoal() {
+  async fetchSoal(forStudent = false) {
     if (this.client) {
-      const { data, error } = await this.client.from('soal').select('*').order('created_at', { ascending: false });
-      if (!error && data) {
-        const camelList = data.map(s => this._toCamelSoal(s));
-        this.setSoal(camelList);
-        return camelList;
+      const targetTable = forStudent ? 'soal_siswa' : 'soal';
+      try {
+        const { data, error } = await this.client.from(targetTable).select('*').order('created_at', { ascending: false });
+        if (!error && data) {
+          const camelList = data.map(s => this._toCamelSoal(s));
+          if (!forStudent) {
+            this.setSoal(camelList);
+          }
+          return camelList;
+        }
+      } catch (err) {
+        // Fallback jika view soal_siswa belum dibuat di database
+        if (forStudent) {
+          try {
+            const { data, error } = await this.client
+              .from('soal')
+              .select('id, tipe, mapel, kelas, bab, pertanyaan, pilihan, bobot, tingkat, pembuat_id, created_at, updated_at')
+              .order('created_at', { ascending: false });
+            if (!error && data) {
+              return data.map(s => this._toCamelSoal(s));
+            }
+          } catch (e) {}
+        }
       }
     }
     return this.getSoal();
@@ -1015,6 +1047,54 @@ const DB = {
       }
     }
     return updated;
+  },
+
+  // ── Penilaian Ujian Server-Side via PostgreSQL RPC (submit_ujian) ──
+  // Menjamin nilai dihitung secara resmi oleh server & mencegah siswa mengubah nilai lewat console
+  async submitUjian({ hasilId, ujianId, siswaId, siswaName, answers, waktuPengerjaan, violations, violationCount, reason }) {
+    if (this.client) {
+      try {
+        const { data, error } = await this.client.rpc('submit_ujian', {
+          p_hasil_id: hasilId,
+          p_ujian_id: ujianId,
+          p_siswa_id: siswaId,
+          p_siswa_name: siswaName,
+          p_answers: answers || {},
+          p_waktu_pengerjaan: Math.round(waktuPengerjaan || 0),
+          p_violations: violations || [],
+          p_violation_count: Math.round(violationCount || 0),
+          p_reason: reason || 'manual'
+        });
+
+        if (!error && data && data.success) {
+          // Sinkronkan hasil resmi server ke cache lokal
+          const list = this.getHasil().map(h => {
+            if (h.id === hasilId) {
+              return {
+                ...h,
+                status: reason === 'suspended' ? 'ditangguhkan' : 'selesai',
+                nilai: data.scoring?.nilai,
+                lulus: data.scoring?.lulus,
+                scoring: data.scoring,
+                waktuPengerjaan,
+                violations,
+                violationCount,
+                answers,
+                submitReason: reason,
+                submittedAt: Date.now()
+              };
+            }
+            return h;
+          });
+          this.setHasil(list);
+          return { success: true, scoring: data.scoring, hasilId: data.hasil_id };
+        }
+        if (error) console.warn('Supabase submit_ujian RPC returned error, fallback to local scoring:', error);
+      } catch (e) {
+        console.warn('Supabase submit_ujian RPC exception, fallback:', e);
+      }
+    }
+    return null;
   },
 
   getHasilByUjian(ujianId) { return this.getHasil().filter(h => h.ujianId === ujianId); },
